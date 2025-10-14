@@ -1,0 +1,27 @@
+{
+  "name": "node-red-zdll",
+  "version": "0.1.0",
+  "description": "Node-RED node for invoking CameraBridge.exe to capture images via CKGenCapture.dll",
+  "keywords": [
+    "node-red",
+    "camera",
+    "dll",
+    "capture"
+  ],
+  "author": "john",
+  "license": "ISC",
+  "main": "zdll.js",
+  "files": [
+    "zdll.js",
+    "zdll.html",
+    "README.md",
+    "bin/"
+  ],
+  "dependencies": {},
+  "node-red": {
+    "version": ">=1.3.0",
+    "nodes": {
+      "zdll": "zdll.js"
+    }
+  }
+}

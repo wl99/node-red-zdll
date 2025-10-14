@@ -1,0 +1,10 @@
+node_modules/
+*.tgz
+dist/
+Thumbs.db
+.DS_Store
+npm-debug.log*
+CameraBridge/bin/
+CameraBridge/obj/
+bin/*.pdb
+bin/*.xml
