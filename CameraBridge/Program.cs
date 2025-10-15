@@ -23,24 +23,24 @@ internal static class Program
                 "--init" => RunInit(args),
                 "--info" => RunInfo(args),
                 "--release" => RunRelease(args),
-                _ => Fail($"未知命令: {args[0]}")
+                _ => Fail($"Unknown command: {args[0]}")
             };
         }
         catch (CameraBridgeException ex)
         {
-            return Fail($"{ex.Message} (返回码: {ex.ReturnCode})");
+            return Fail($"{ex.Message} (driver code: {ex.ReturnCode})");
         }
         catch (DllNotFoundException ex)
         {
-            return Fail($"未找到 DLL: {ex.Message}");
+            return Fail($"DLL not found: {ex.Message}");
         }
         catch (BadImageFormatException)
         {
-            return Fail("DLL 与 CameraBridge.exe 位数不匹配，请确保均为 32 位。");
+            return Fail("Architecture mismatch: ensure CameraBridge.exe and CKGenCapture.dll are both 32-bit.");
         }
         catch (Exception ex)
         {
-            return Fail($"执行异常: {ex.Message}");
+            return Fail($"Unhandled exception: {ex.Message}");
         }
     }
 
@@ -48,7 +48,7 @@ internal static class Program
     {
         if (args.Length < 2)
         {
-            return Fail("缺少输出文件路径: --capture <path>");
+            return Fail("Missing output file path: --capture <path>");
         }
 
         string output = args[1];
@@ -65,7 +65,7 @@ internal static class Program
                 case "--format":
                     if (++i >= args.Length)
                     {
-                        return Fail("--format 需要一个取值 (gray8/bgr24/rgb24)");
+                        return Fail("--format requires a value (gray8/bgr24/rgb24)");
                     }
                     format = ParseFormat(args[i]);
                     break;
@@ -77,30 +77,30 @@ internal static class Program
                     }
                     if (zoneValues.Count == 0)
                     {
-                        return Fail("--zone 需要至少 1 个整数参数");
+                        return Fail("--zone requires at least one integer value");
                     }
                     zone = zoneValues.ToArray();
                     break;
                 case "--meter-index":
                     if (++i >= args.Length)
                     {
-                        return Fail("--meter-index 需要一个大于 0 的整数");
+                        return Fail("--meter-index requires a positive integer");
                     }
                     meterIndex = ParseInt(args[i], "meter-index");
                     if (meterIndex <= 0)
                     {
-                        return Fail("--meter-index 必须为正整数");
+                        return Fail("--meter-index must be greater than zero");
                     }
                     break;
                 case "--ck-dll":
                     if (++i >= args.Length)
                     {
-                        return Fail("--ck-dll 需要一个指向 CKGenCapture.dll 的路径");
+                        return Fail("--ck-dll requires a path to CKGenCapture.dll");
                     }
                     ckDllPath = args[i];
                     break;
                 default:
-                    return Fail($"未知参数: {token}");
+                    return Fail($"Unknown option: {token}");
             }
         }
 
@@ -115,19 +115,19 @@ internal static class Program
 
         var result = session.Capture(options);
 
-        Console.WriteLine($"厂商: {result.Manufacturer}");
-        Console.WriteLine($"分辨率: {result.Width}x{result.Height}");
-        Console.WriteLine($"测点数量: {result.MeterCount}");
-        Console.WriteLine($"驱动返回码: {result.DriverCode}");
-        Console.WriteLine($"实际使用测点索引: {result.SelectedMeterIndex} (请求值: {meterIndex})");
+        Console.WriteLine($"Manufacturer: {result.Manufacturer}");
+        Console.WriteLine($"Resolution: {result.Width}x{result.Height}");
+        Console.WriteLine($"Meter count: {result.MeterCount}");
+        Console.WriteLine($"Driver return code: {result.DriverCode}");
+        Console.WriteLine($"Actual meter index: {result.SelectedMeterIndex} (requested {meterIndex})");
 
         if (result.Saved)
         {
-            Console.WriteLine($"输出文件: {result.OutputPath}");
+            Console.WriteLine($"Output file: {result.OutputPath}");
         }
         else
         {
-            Console.WriteLine("未生成图像文件，参见返回码确认原因。");
+            Console.WriteLine("Image not saved; check driver return code for details.");
         }
 
         return result.ReturnCode;
@@ -139,10 +139,10 @@ internal static class Program
 
         using var session = new CameraSession();
         session.Initialize();
-        Console.WriteLine("初始化成功。");
-        Console.WriteLine($"厂商: {session.Manufacturer}");
-        Console.WriteLine($"分辨率: {session.Width}x{session.Height}");
-        Console.WriteLine($"测点数量: {session.MeterCount}");
+        Console.WriteLine("Initialization succeeded.");
+        Console.WriteLine($"Manufacturer: {session.Manufacturer}");
+        Console.WriteLine($"Resolution: {session.Width}x{session.Height}");
+        Console.WriteLine($"Meter count: {session.MeterCount}");
         return 0;
     }
 
@@ -152,9 +152,9 @@ internal static class Program
 
         using var session = new CameraSession();
         session.Initialize();
-        Console.WriteLine($"厂商: {session.Manufacturer}");
-        Console.WriteLine($"分辨率: {session.Width}x{session.Height}");
-        Console.WriteLine($"测点数量: {session.MeterCount}");
+        Console.WriteLine($"Manufacturer: {session.Manufacturer}");
+        Console.WriteLine($"Resolution: {session.Width}x{session.Height}");
+        Console.WriteLine($"Meter count: {session.MeterCount}");
         return 0;
     }
 
@@ -165,11 +165,11 @@ internal static class Program
         int code = CK.PhotoCaptureExit();
         if (code == 0)
         {
-            Console.WriteLine("已调用 PhotoCaptureExit。");
+            Console.WriteLine("PhotoCaptureExit called successfully.");
         }
         else
         {
-            Console.WriteLine($"PhotoCaptureExit 返回码: {code}");
+            Console.WriteLine($"PhotoCaptureExit returned code: {code}");
         }
         return code;
     }
@@ -179,21 +179,21 @@ internal static class Program
         "gray8" or "greyscale" or "grayscale" => PixelFormat.Gray8,
         "bgr24" => PixelFormat.Bgr24,
         "rgb24" => PixelFormat.Rgb24,
-        _ => throw new ArgumentException($"不支持的图像格式: {value}")
+        _ => throw new ArgumentException($"Unsupported image format: {value}")
     };
 
     private static int ParseInt(string value, string name)
     {
         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int result))
         {
-            throw new ArgumentException($"无法解析 {name}: {value}");
+            throw new ArgumentException($"Unable to parse {name}: {value}");
         }
         return result;
     }
 
     private static void PrintHelp()
     {
-        Console.WriteLine("CameraBridge 命令行用法:");
+        Console.WriteLine("CameraBridge command line usage:");
         Console.WriteLine("  --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone <n1> <n2> ...] [--meter-index <n>] [--ck-dll <path>]");
         Console.WriteLine("  --init [--ck-dll <path>]");
         Console.WriteLine("  --info [--ck-dll <path>]");

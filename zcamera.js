@@ -22,7 +22,7 @@ module.exports = function (RED) {
             try {
                 const candidateBridgePath = (msg.bridgePath || DEFAULT_BRIDGE_PATH || "").toString().trim();
                 if (!candidateBridgePath) {
-                    throw new Error("未配置 CameraBridge.exe 路径");
+                    throw new Error("CameraBridge.exe path is required");
                 }
 
                 const resolvedBridgePath = path.isAbsolute(candidateBridgePath)
@@ -30,7 +30,7 @@ module.exports = function (RED) {
                     : path.resolve(__dirname, candidateBridgePath);
 
                 if (!fs.existsSync(resolvedBridgePath)) {
-                    throw new Error(`未找到 CameraBridge.exe: ${resolvedBridgePath}`);
+                    throw new Error(`CameraBridge.exe not found: ${resolvedBridgePath}`);
                 }
 
                 const outputDir = path.resolve(msg.outputDir || baseOutputDir || process.cwd());
@@ -38,19 +38,21 @@ module.exports = function (RED) {
                     fs.mkdirSync(outputDir, { recursive: true });
                 }
 
-                const filename = buildFilename(msg.filename || baseFilename || "photo-{{timestamp}}.bmp");
-                const outputPath = path.join(outputDir, filename);
+                const rawFilename = msg.filename || baseFilename || "photo-{{timestamp}}.bmp";
                 const format = (msg.format || baseFormat || "bmp").toLowerCase();
                 const zone = msg.zone;
                 const parsedMeterIndex = Number(msg.meterIndex);
                 const meterIndex = Number.isFinite(parsedMeterIndex) && parsedMeterIndex > 0 ? parsedMeterIndex : baseMeterIndex;
                 const candidateCkDllPath = (msg.ckDllPath || baseCkDllPath || DEFAULT_CK_DLL_PATH || "").toString().trim();
 
+                const filename = buildFilenameWithMeterIndex(rawFilename, meterIndex, msg);
+                const outputPath = path.join(outputDir, filename);
+
                 const args = ["--capture", outputPath];
                 if (format === "bgr24" || format === "rgb24" || format === "gray8") {
                     args.push("--format", format);
                 } else if (format !== "bmp") {
-                    node.warn(`未知图像格式 ${format}，已使用默认 bmp 输出`);
+                    node.warn(`Unknown image format ${format}; defaulting to bmp`);
                 }
 
                 if (zone) {
@@ -70,7 +72,7 @@ module.exports = function (RED) {
                         : path.resolve(path.dirname(resolvedBridgePath), candidateCkDllPath);
 
                     if (!fs.existsSync(resolvedCkDllPath)) {
-                        throw new Error(`未找到 CKGenCapture.dll: ${resolvedCkDllPath}`);
+                        throw new Error(`CKGenCapture.dll not found: ${resolvedCkDllPath}`);
                     }
 
                     args.push("--ck-dll", resolvedCkDllPath);
@@ -87,7 +89,7 @@ module.exports = function (RED) {
                         ? configTimeout
                         : 60000;
 
-                node.status({ fill: "blue", shape: "dot", text: "拍照中" });
+                node.status({ fill: "blue", shape: "dot", text: "capturing" });
                 execFile(resolvedBridgePath, args, { timeout }, (error, stdout, stderr) => {
                     if (error) {
                         node.status({ fill: "red", shape: "ring", text: error.message });
@@ -122,11 +124,33 @@ module.exports = function (RED) {
     RED.nodes.registerType("zcamera", ZcameraNode);
 };
 
-function buildFilename(pattern) {
-    if (pattern.includes("{{timestamp}}")) {
-        return pattern.replace(/\{\{timestamp\}\}/g, Date.now().toString());
+function buildFilename(pattern, msg) {
+    if (typeof pattern !== "string" || pattern.length === 0) {
+        pattern = "photo-{{timestamp}}.bmp";
     }
-    return pattern;
+
+    const timestamp = Date.now().toString();
+    return pattern.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (match, key) => {
+        const trimmedKey = key.trim();
+        if (trimmedKey === "timestamp") {
+            return timestamp;
+        }
+        if (msg && Object.prototype.hasOwnProperty.call(msg, trimmedKey) && msg[trimmedKey] != null) {
+            return String(msg[trimmedKey]);
+        }
+        return match;
+    });
+}
+
+function buildFilenameWithMeterIndex(pattern, meterIndex, msg) {
+    const resolved = buildFilename(pattern, msg);
+    if (!Number.isFinite(meterIndex) || meterIndex <= 0) {
+        return resolved;
+    }
+
+    const ext = path.extname(resolved);
+    const base = ext ? resolved.slice(0, -ext.length) : resolved;
+    return `${base}_meter${meterIndex}${ext}`;
 }
 
 function parseZone(value) {

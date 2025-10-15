@@ -15,7 +15,7 @@
 1. 确保 `CKGenCapture.dll` 与插件内 `bin/CameraBridge.exe` 位于同一目录（可将 DLL 复制到 `bin/`）。若许可不允许分发，请按厂商要求单独获取。
 2. 将本插件放入 Node-RED 的 `~/.node-red/node_modules/` 或通过 `npm install` 安装。`package.json` 默认会将 `bin/` 一并发布。
 3. 在 Node-RED 编辑器中拖入 `zcamera` 节点，默认固定使用插件内的 `bin/CameraBridge.exe` 与 `bin/CKGenCapture.dll`；如需替换，可在节点面板中填写新的路径，或在消息里通过 `msg.bridgePath` / `msg.ckDllPath` 指定。若留空 `CKGenCapture.dll` 路径，桥接程序会自动回退到 `bin/CKGenCapture.dll`。
-4. 仅需设置输出目录、默认文件名（支持 `{{timestamp}}` 占位符）、图像格式与“保存测点索引”；无需手动管理测点标识时可留空。
+4. 仅需设置输出目录、默认文件名（支持 `{{timestamp}}` 以及 `msg` 中同名占位符如 `{{orderId}}`）、图像格式与“保存测点索引”；无需手动管理测点标识时可留空。
 5. 触发消息拍照时，可额外传入 `msg.filename`、`msg.format`、`msg.meterIndex`、`msg.timeout`，以及（如需覆盖默认测点配置）`msg.zone`；执行结果写入 `msg.payload`。
 
 ### CameraBridge 命令行
