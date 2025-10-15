@@ -29,6 +29,10 @@
         <input type="number" id="node-input-meterIndex" min="1" placeholder="1">
     </div>
     <div class="form-row">
+        <label for="node-input-meterIndexes"><i class="fa fa-list-ol"></i> 测点列表 (如 1,2,3)</label>
+        <input type="text" id="node-input-meterIndexes" placeholder="留空表示使用测点索引">
+    </div>
+    <div class="form-row">
         <label for="node-input-timeout"><i class="fa fa-clock-o"></i> 超时时间 (毫秒)</label>
         <input type="number" id="node-input-timeout" min="0" placeholder="60000">
     </div>
@@ -45,6 +49,7 @@
             defaultFilename: { value: 'photo-{{timestamp}}.bmp' },
             format: { value: 'bmp' },
             meterIndex: { value: 1 },
+            meterIndexes: { value: '' },
             timeout: { value: 60000 }
         },
         inputs: 1,

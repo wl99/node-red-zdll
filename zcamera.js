@@ -17,6 +17,7 @@ module.exports = function (RED) {
         const baseFormat = config.format || "bmp";
         const baseCkDllPath = config.ckDllPath || "";
         const baseMeterIndex = Number(config.meterIndex) > 0 ? Number(config.meterIndex) : 1;
+        const baseConfiguredMeterIndexes = parseMeterIndexes(config.meterIndexes);
 
         node.on("input", async (msg, send, done) => {
             try {
@@ -73,7 +74,8 @@ module.exports = function (RED) {
                     resolvedCkDllPath = candidateAbsolute;
                 }
 
-                const meterIndexes = buildMeterIndexList(msg.meterIndexes, meterIndex);
+                const rawMeterIndexes = msg.meterIndexes !== undefined ? msg.meterIndexes : baseConfiguredMeterIndexes;
+                const meterIndexes = buildMeterIndexList(rawMeterIndexes, meterIndex);
                 const captureArgs = buildCaptureArgs({
                     outputTemplate,
                     format,
@@ -139,15 +141,33 @@ function buildFilename(pattern, msg) {
 }
 
 function buildMeterIndexList(rawIndexes, fallback) {
-    if (Array.isArray(rawIndexes)) {
-        const normalized = rawIndexes
-            .map((value) => Number(value))
-            .filter((value) => Number.isFinite(value) && value > 0);
-        if (normalized.length > 0) {
-            return Array.from(new Set(normalized));
-        }
+    const list = parseMeterIndexes(rawIndexes);
+    if (list.length > 0) {
+        return list;
     }
     return [fallback];
+}
+
+function parseMeterIndexes(value) {
+    if (Array.isArray(value)) {
+        return uniqueMeterIndexes(value.map(Number));
+    }
+
+    if (typeof value === "string") {
+        const tokens = value.split(/[\s,]+/).filter(Boolean);
+        return uniqueMeterIndexes(tokens.map(Number));
+    }
+
+    if (Number.isFinite(value)) {
+        const num = Number(value);
+        return num > 0 ? [num] : [];
+    }
+
+    return [];
+}
+
+function uniqueMeterIndexes(numbers) {
+    return Array.from(new Set(numbers.filter((n) => Number.isFinite(n) && n > 0)));
 }
 
 function buildCaptureArgs({ outputTemplate, format, zoneArgs, meterIndexes, ckDllPath }) {
