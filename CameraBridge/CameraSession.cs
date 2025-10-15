@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -29,7 +30,7 @@ internal sealed class CameraSession : IDisposable
         int initCode = CK.PhotoCaptureInit(manufacturerBuffer);
         if (!IsSuccess(initCode))
         {
-            throw new CameraBridgeException("PhotoCaptureInit 调用失败", initCode);
+            throw new CameraBridgeException("PhotoCaptureInit failed", initCode);
         }
 
         RefreshSessionInfo(manufacturerBuffer);
@@ -38,10 +39,25 @@ internal sealed class CameraSession : IDisposable
 
     public CaptureResult Capture(CaptureOptions options)
     {
+        var results = CaptureMany(options, new List<CaptureTarget>
+        {
+            new CaptureTarget(options.OutputPath, options.MeterIndex)
+        });
+
+        return results[0];
+    }
+
+    public IReadOnlyList<CaptureResult> CaptureMany(CaptureOptions options, IReadOnlyList<CaptureTarget> targets)
+    {
         ThrowIfDisposed();
         if (!_initialized)
         {
-            throw new InvalidOperationException("请先调用 Initialize()");
+            throw new InvalidOperationException("Initialize must be called before Capture");
+        }
+
+        if (targets.Count == 0)
+        {
+            throw new ArgumentException("At least one capture target is required", nameof(targets));
         }
 
         RefreshSessionInfo();
@@ -50,8 +66,7 @@ internal sealed class CameraSession : IDisposable
         int bufferSize = checked(Width * Height * options.BytesPerPixel);
         var buffers = new IntPtr[MeterCount];
         byte[] zeroBuffer = new byte[bufferSize];
-
-        int selectedIndex = Math.Clamp(options.MeterIndex - 1, 0, MeterCount - 1);
+        var results = new List<CaptureResult>(targets.Count);
 
         try
         {
@@ -63,15 +78,23 @@ internal sealed class CameraSession : IDisposable
 
             int rc = CK.PhotoCapture(zone, buffers);
             bool success = IsSuccess(rc);
-            if (!success)
+
+            foreach (var target in targets)
             {
-                return new CaptureResult(rc, success, options.OutputPath, Manufacturer, Width, Height, MeterCount, false, selectedIndex + 1);
+                int selectedIndex = Math.Clamp(target.MeterIndex - 1, 0, MeterCount - 1);
+                string outputPath = Path.GetFullPath(target.OutputPath);
+
+                bool saved = false;
+                if (success)
+                {
+                    ImageWriter.Write(outputPath, buffers[selectedIndex], Width, Height, options.Format);
+                    saved = true;
+                }
+
+                results.Add(new CaptureResult(rc, success, outputPath, Manufacturer, Width, Height, MeterCount, saved, selectedIndex + 1));
             }
 
-            var outputPath = Path.GetFullPath(options.OutputPath);
-            ImageWriter.Write(outputPath, buffers[selectedIndex], Width, Height, options.Format);
-
-            return new CaptureResult(rc, success, outputPath, Manufacturer, Width, Height, MeterCount, true, selectedIndex + 1);
+            return results;
         }
         finally
         {
@@ -94,12 +117,12 @@ internal sealed class CameraSession : IDisposable
         int infoCode = CK.PhotoCaptureGet(ref width, ref height, ref meterCount);
         if (!IsSuccess(infoCode))
         {
-            throw new CameraBridgeException("PhotoCaptureGet 调用失败", infoCode);
+            throw new CameraBridgeException("PhotoCaptureGet failed", infoCode);
         }
 
         if (width <= 0 || height <= 0)
         {
-            throw new InvalidOperationException($"DLL 返回的分辨率非法: {width}x{height}");
+            throw new InvalidOperationException($"Invalid resolution reported by driver: {width}x{height}");
         }
 
         MeterCount = meterCount > 0 ? meterCount : 1;
@@ -145,7 +168,7 @@ internal sealed class CameraSession : IDisposable
             return (int[])requested.Clone();
         }
 
-        throw new ArgumentException($"--zone 参数长度必须为 {segments}，当前为 {requested.Length}");
+        throw new ArgumentException($"--zone requires exactly {segments} values but received {requested.Length}");
     }
 
     private void ThrowIfDisposed()

@@ -21,7 +21,7 @@
 ### CameraBridge 命令行
 
 ```text
-CameraBridge.exe --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone <n1> <n2> ...] [--meter-index <n>] [--ck-dll <path>]
+CameraBridge.exe --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone <n1> <n2> ...] [--meter-index <n>] [--meter-indexes n1,n2,...] [--ck-dll <path>]
 CameraBridge.exe --init [--ck-dll <path>]
 CameraBridge.exe --info [--ck-dll <path>]
 CameraBridge.exe --release [--ck-dll <path>]
@@ -29,7 +29,7 @@ CameraBridge.exe --release [--ck-dll <path>]
 
 - 驱动返回码为 `1` 时表示初始化/拍照成功（程序会换算为退出码 `0`），其他数值请参考厂家文档。
 - `--zone` 参数通常按测点数量提供若干整数，缺省时自动填充为 `1`。
-- `--meter-index` 表示从第几个测点写出文件（默认 1），超出范围时将自动夹取。
+- `--meter-index` 表示从第几个测点写出文件（默认 1），`--meter-indexes` 可一次传入多个测点；当输出路径包含 `{{meter}}` 时会替换为测点编号，否则自动追加 `_meter{n}`。
 - `--ck-dll` 可显式指定 `CKGenCapture.dll` 位置，便于与驱动安装目录或新版 DLL 配合使用。
 
 ## 重新编译桥接程序

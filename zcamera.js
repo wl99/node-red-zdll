@@ -50,6 +50,8 @@ module.exports = function (RED) {
                     format = "bmp";
                 }
 
+                const filenameTemplate = buildFilename(rawFilename, msg);
+                const outputTemplate = path.join(outputDir, filenameTemplate);
                 const zoneArgs = zone ? parseZone(zone) : [];
 
                 const msgTimeout = Number(msg.timeout);
@@ -72,46 +74,39 @@ module.exports = function (RED) {
                 }
 
                 const meterIndexes = buildMeterIndexList(msg.meterIndexes, meterIndex);
-                const results = [];
+                const captureArgs = buildCaptureArgs({
+                    outputTemplate,
+                    format,
+                    zoneArgs,
+                    meterIndexes,
+                    ckDllPath: resolvedCkDllPath
+                });
 
-                for (let idx = 0; idx < meterIndexes.length; idx += 1) {
-                    const currentMeter = meterIndexes[idx];
-                    const filename = buildFilenameWithMeterIndex(rawFilename, currentMeter, msg);
-                    const outputPath = path.join(outputDir, filename);
+                node.status({ fill: "blue", shape: "dot", text: `capturing ${meterIndexes.length}` });
+                const { stdout, stderr } = await execFileAsync(resolvedBridgePath, captureArgs, timeout);
 
-                    const captureArgs = ["--capture", outputPath];
-                    if (format !== "bmp") {
-                        captureArgs.push("--format", format);
-                    }
-
-                    if (zoneArgs.length > 0) {
-                        captureArgs.push("--zone", ...zoneArgs.map((value) => value.toString()));
-                    }
-
-                    captureArgs.push("--meter-index", currentMeter.toString());
-
-                    if (resolvedCkDllPath) {
-                        captureArgs.push("--ck-dll", resolvedCkDllPath);
-                    }
-
-                    node.status({ fill: "blue", shape: "dot", text: `capturing ${idx + 1}/${meterIndexes.length}` });
-                    const { stdout, stderr } = await execFileAsync(resolvedBridgePath, captureArgs, timeout);
-
-                    results.push({
-                        output: outputPath,
-                        stdout,
-                        stderr,
-                        bridgePath: resolvedBridgePath,
-                        ckDllPath: resolvedCkDllPath,
-                        args: captureArgs,
-                        timeout,
-                        meterIndex: currentMeter
-                    });
-                }
+                const summary = parseBridgeOutput(stdout);
+                const resultCount = Array.isArray(summary?.results) ? summary.results.length : 0;
 
                 msg.ckDllPath = resolvedCkDllPath;
-                msg.payload = results.length === 1 ? results[0] : results;
-                node.status({ fill: "green", shape: "dot", text: `done (${results.length})` });
+                msg.stdout = stdout;
+                msg.stderr = stderr;
+                msg.args = captureArgs;
+                msg.bridge = {
+                    manufacturer: summary?.manufacturer,
+                    resolution: summary?.resolution,
+                    meterCount: summary?.meterCount
+                };
+                if (resultCount === 1) {
+                    msg.payload = summary.results[0];
+                } else {
+                    msg.payload = summary?.results || [];
+                }
+
+                const statusText = resultCount === 1
+                    ? path.basename(summary.results[0].output)
+                    : `done (${resultCount})`;
+                node.status({ fill: "green", shape: "dot", text: statusText });
                 send(msg);
                 done();
             } catch (err) {
@@ -143,17 +138,6 @@ function buildFilename(pattern, msg) {
     });
 }
 
-function buildFilenameWithMeterIndex(pattern, meterIndex, msg) {
-    const resolved = buildFilename(pattern, msg);
-    if (!Number.isFinite(meterIndex) || meterIndex <= 0) {
-        return resolved;
-    }
-
-    const ext = path.extname(resolved);
-    const base = ext ? resolved.slice(0, -ext.length) : resolved;
-    return `${base}_meter${meterIndex}${ext}`;
-}
-
 function buildMeterIndexList(rawIndexes, fallback) {
     if (Array.isArray(rawIndexes)) {
         const normalized = rawIndexes
@@ -164,6 +148,30 @@ function buildMeterIndexList(rawIndexes, fallback) {
         }
     }
     return [fallback];
+}
+
+function buildCaptureArgs({ outputTemplate, format, zoneArgs, meterIndexes, ckDllPath }) {
+    const args = ["--capture", outputTemplate];
+
+    if (format !== "bmp") {
+        args.push("--format", format);
+    }
+
+    if (zoneArgs.length > 0) {
+        args.push("--zone", ...zoneArgs.map((value) => value.toString()));
+    }
+
+    if (meterIndexes.length > 1) {
+        args.push("--meter-indexes", meterIndexes.join(","));
+    } else {
+        args.push("--meter-index", meterIndexes[0].toString());
+    }
+
+    if (ckDllPath) {
+        args.push("--ck-dll", ckDllPath);
+    }
+
+    return args;
 }
 
 function execFileAsync(command, args, timeout) {
@@ -180,6 +188,26 @@ function execFileAsync(command, args, timeout) {
             resolve({ stdout, stderr });
         });
     });
+}
+
+function parseBridgeOutput(stdout) {
+    if (typeof stdout !== "string") {
+        throw new Error("Bridge output missing");
+    }
+
+    const lines = stdout.split(/\r?\n/);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const line = lines[i].trim();
+        if (line.startsWith("JSON:")) {
+            const json = line.substring(5).trim();
+            if (!json) {
+                throw new Error("Bridge JSON summary is empty");
+            }
+            return JSON.parse(json);
+        }
+    }
+
+    throw new Error("Bridge output missing JSON summary");
 }
 
 function parseZone(value) {
