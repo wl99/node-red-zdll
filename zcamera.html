@@ -1,4 +1,4 @@
-<script type="text/html" data-template-name="zdll">
+<script type="text/html" data-template-name="zcamera">
     <div class="form-row">
         <label for="node-input-name"><i class="fa fa-tag"></i> 名称</label>
         <input type="text" id="node-input-name" placeholder="Camera Capture">
@@ -6,6 +6,10 @@
     <div class="form-row">
         <label for="node-input-outputDir"><i class="fa fa-folder-open"></i> 输出目录</label>
         <input type="text" id="node-input-outputDir" placeholder="C:\\captures">
+    </div>
+    <div class="form-row">
+        <label for="node-input-ckDllPath"><i class="fa fa-plug"></i> CKGenCapture.dll 路径</label>
+        <input type="text" id="node-input-ckDllPath" placeholder="bin\\CKGenCapture.dll">
     </div>
     <div class="form-row">
         <label for="node-input-defaultFilename"><i class="fa fa-image"></i> 默认文件名</label>
@@ -21,10 +25,6 @@
         </select>
     </div>
     <div class="form-row">
-        <label for="node-input-zone"><i class="fa fa-square"></i> 测点标识 (每项一个整数)</label>
-        <input type="text" id="node-input-zone" placeholder="1 1 1">
-    </div>
-    <div class="form-row">
         <label for="node-input-meterIndex"><i class="fa fa-crosshairs"></i> 保存测点索引</label>
         <input type="number" id="node-input-meterIndex" min="1" placeholder="1">
     </div>
@@ -35,15 +35,15 @@
 </script>
 
 <script type="text/javascript">
-    RED.nodes.registerType('zdll', {
+    RED.nodes.registerType('zcamera', {
         category: 'zutils',
         color: 'BurlyWood',
         defaults: {
             name: { value: '' },
             outputDir: { value: '' },
+            ckDllPath: { value: '' },
             defaultFilename: { value: 'photo-{{timestamp}}.bmp' },
             format: { value: 'bmp' },
-            zone: { value: '' },
             meterIndex: { value: 1 },
             timeout: { value: 60000 }
         },
@@ -52,7 +52,7 @@
         icon: 'file.png',
         align: 'left',
         label: function () {
-            return this.name || 'zdll';
+            return this.name || 'zcamera';
         },
         labelStyle: function () {
             return this.name ? 'node_label_italic' : '';

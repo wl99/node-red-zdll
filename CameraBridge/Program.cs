@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace CameraBridge;
 
@@ -19,9 +20,9 @@ internal static class Program
             return args[0] switch
             {
                 "--capture" => RunCapture(args),
-                "--init" => RunInit(),
-                "--info" => RunInfo(),
-                "--release" => RunRelease(),
+                "--init" => RunInit(args),
+                "--info" => RunInfo(args),
+                "--release" => RunRelease(args),
                 _ => Fail($"未知命令: {args[0]}")
             };
         }
@@ -54,6 +55,7 @@ internal static class Program
         PixelFormat format = PixelFormat.Gray8;
         int[]? zone = null;
         int meterIndex = 1;
+        string? ckDllPath = null;
 
         for (int i = 2; i < args.Length; i++)
         {
@@ -90,10 +92,19 @@ internal static class Program
                         return Fail("--meter-index 必须为正整数");
                     }
                     break;
+                case "--ck-dll":
+                    if (++i >= args.Length)
+                    {
+                        return Fail("--ck-dll 需要一个指向 CKGenCapture.dll 的路径");
+                    }
+                    ckDllPath = args[i];
+                    break;
                 default:
                     return Fail($"未知参数: {token}");
             }
         }
+
+        PrepareNativeDependencies(ckDllPath);
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output)) ?? ".");
 
@@ -122,8 +133,10 @@ internal static class Program
         return result.ReturnCode;
     }
 
-    private static int RunInit()
+    private static int RunInit(string[] args)
     {
+        PrepareNativeDependencies(ExtractCkDllPath(args));
+
         using var session = new CameraSession();
         session.Initialize();
         Console.WriteLine("初始化成功。");
@@ -133,8 +146,10 @@ internal static class Program
         return 0;
     }
 
-    private static int RunInfo()
+    private static int RunInfo(string[] args)
     {
+        PrepareNativeDependencies(ExtractCkDllPath(args));
+
         using var session = new CameraSession();
         session.Initialize();
         Console.WriteLine($"厂商: {session.Manufacturer}");
@@ -143,8 +158,10 @@ internal static class Program
         return 0;
     }
 
-    private static int RunRelease()
+    private static int RunRelease(string[] args)
     {
+        PrepareNativeDependencies(ExtractCkDllPath(args));
+
         int code = CK.PhotoCaptureExit();
         if (code == 0)
         {
@@ -177,15 +194,73 @@ internal static class Program
     private static void PrintHelp()
     {
         Console.WriteLine("CameraBridge 命令行用法:");
-        Console.WriteLine("  --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone <n1> <n2> ...] [--meter-index <n>]");
-        Console.WriteLine("  --init");
-        Console.WriteLine("  --info");
-        Console.WriteLine("  --release");
+        Console.WriteLine("  --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone <n1> <n2> ...] [--meter-index <n>] [--ck-dll <path>]");
+        Console.WriteLine("  --init [--ck-dll <path>]");
+        Console.WriteLine("  --info [--ck-dll <path>]");
+        Console.WriteLine("  --release [--ck-dll <path>]");
     }
 
     private static int Fail(string message)
     {
         Console.Error.WriteLine(message);
         return -1;
+    }
+
+    private static string? ExtractCkDllPath(string[] args)
+    {
+        if (args.Length <= 1)
+        {
+            return null;
+        }
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            if (string.Equals(args[i], "--ck-dll", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length)
+                {
+                    throw new ArgumentException("--ck-dll 需要一个指向 CKGenCapture.dll 的路径");
+                }
+                return args[i + 1];
+            }
+        }
+        return null;
+    }
+
+    private static void PrepareNativeDependencies(string? ckDllPath)
+    {
+        string fullPath;
+        if (string.IsNullOrWhiteSpace(ckDllPath))
+        {
+            fullPath = Path.Combine(AppContext.BaseDirectory, "CKGenCapture.dll");
+            if (!File.Exists(fullPath))
+            {
+                // 没有显式配置且默认文件不存在，保持现有搜索路径让系统自行解析
+                return;
+            }
+        }
+        else
+        {
+            fullPath = Path.GetFullPath(ckDllPath);
+            if (!File.Exists(fullPath))
+            {
+                throw new FileNotFoundException($"指定的 CKGenCapture.dll 不存在: {fullPath}");
+            }
+        }
+
+        string directory = Path.GetDirectoryName(fullPath) ?? Environment.CurrentDirectory;
+        if (!NativeMethods.SetDllDirectory(directory))
+        {
+            int error = Marshal.GetLastWin32Error();
+            throw new InvalidOperationException($"无法设置 DLL 搜索路径: {directory} (错误码 {error})");
+        }
+
+        NativeLibrary.Load(fullPath);
+    }
+
+    private static class NativeMethods
+    {
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        internal static extern bool SetDllDirectory(string? lpPathName);
     }
 }

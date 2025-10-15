@@ -1,6 +1,6 @@
 {
-  "name": "node-red-zdll",
-  "version": "0.1.0",
+  "name": "node-red-zcamera",
+  "version": "0.1.2",
   "description": "Node-RED node for invoking a bundled CameraBridge.exe to drive CKGenCapture.dll cameras",
   "keywords": [
     "node-red",
@@ -20,10 +20,10 @@
     "url": "https://github.com/wl99/node-red-zdll/issues"
   },
   "homepage": "https://github.com/wl99/node-red-zdll#readme",
-  "main": "zdll.js",
+  "main": "zcamera.js",
   "files": [
-    "zdll.js",
-    "zdll.html",
+    "zcamera.js",
+    "zcamera.html",
     "README.md",
     "bin/"
   ],
@@ -40,7 +40,7 @@
   "node-red": {
     "version": ">=1.3.0",
     "nodes": {
-      "zdll": "zdll.js"
+      "zcamera": "zcamera.js"
     }
   }
 }
