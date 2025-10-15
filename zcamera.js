@@ -18,7 +18,7 @@ module.exports = function (RED) {
         const baseCkDllPath = config.ckDllPath || "";
         const baseMeterIndex = Number(config.meterIndex) > 0 ? Number(config.meterIndex) : 1;
 
-        node.on("input", (msg, send, done) => {
+        node.on("input", async (msg, send, done) => {
             try {
                 const candidateBridgePath = (msg.bridgePath || DEFAULT_BRIDGE_PATH || "").toString().trim();
                 if (!candidateBridgePath) {
@@ -39,47 +39,18 @@ module.exports = function (RED) {
                 }
 
                 const rawFilename = msg.filename || baseFilename || "photo-{{timestamp}}.bmp";
-                const format = (msg.format || baseFormat || "bmp").toLowerCase();
+                let format = (msg.format || baseFormat || "bmp").toLowerCase();
                 const zone = msg.zone;
                 const parsedMeterIndex = Number(msg.meterIndex);
                 const meterIndex = Number.isFinite(parsedMeterIndex) && parsedMeterIndex > 0 ? parsedMeterIndex : baseMeterIndex;
                 const candidateCkDllPath = (msg.ckDllPath || baseCkDllPath || DEFAULT_CK_DLL_PATH || "").toString().trim();
 
-                const filename = buildFilenameWithMeterIndex(rawFilename, meterIndex, msg);
-                const outputPath = path.join(outputDir, filename);
-
-                const args = ["--capture", outputPath];
-                if (format === "bgr24" || format === "rgb24" || format === "gray8") {
-                    args.push("--format", format);
-                } else if (format !== "bmp") {
+                if (format !== "bmp" && format !== "bgr24" && format !== "rgb24" && format !== "gray8") {
                     node.warn(`Unknown image format ${format}; defaulting to bmp`);
+                    format = "bmp";
                 }
 
-                if (zone) {
-                    const zoneArgs = parseZone(zone);
-                    if (zoneArgs.length > 0) {
-                        args.push("--zone", ...zoneArgs.map((value) => value.toString()));
-                    }
-                }
-
-                if (Number.isFinite(meterIndex) && meterIndex > 0) {
-                    args.push("--meter-index", meterIndex.toString());
-                }
-
-                if (candidateCkDllPath) {
-                    const resolvedCkDllPath = path.isAbsolute(candidateCkDllPath)
-                        ? candidateCkDllPath
-                        : path.resolve(path.dirname(resolvedBridgePath), candidateCkDllPath);
-
-                    if (!fs.existsSync(resolvedCkDllPath)) {
-                        throw new Error(`CKGenCapture.dll not found: ${resolvedCkDllPath}`);
-                    }
-
-                    args.push("--ck-dll", resolvedCkDllPath);
-                    msg.ckDllPath = resolvedCkDllPath;
-                } else {
-                    msg.ckDllPath = "";
-                }
+                const zoneArgs = zone ? parseZone(zone) : [];
 
                 const msgTimeout = Number(msg.timeout);
                 const configTimeout = Number(config.timeout);
@@ -89,30 +60,60 @@ module.exports = function (RED) {
                         ? configTimeout
                         : 60000;
 
-                node.status({ fill: "blue", shape: "dot", text: "capturing" });
-                execFile(resolvedBridgePath, args, { timeout }, (error, stdout, stderr) => {
-                    if (error) {
-                        node.status({ fill: "red", shape: "ring", text: error.message });
-                        const err = new Error(stderr || error.message);
-                        node.error(err, msg);
-                        done(err);
-                        return;
+                let resolvedCkDllPath = "";
+                if (candidateCkDllPath) {
+                    const candidateAbsolute = path.isAbsolute(candidateCkDllPath)
+                        ? candidateCkDllPath
+                        : path.resolve(path.dirname(resolvedBridgePath), candidateCkDllPath);
+                    if (!fs.existsSync(candidateAbsolute)) {
+                        throw new Error(`CKGenCapture.dll not found: ${candidateAbsolute}`);
+                    }
+                    resolvedCkDllPath = candidateAbsolute;
+                }
+
+                const meterIndexes = buildMeterIndexList(msg.meterIndexes, meterIndex);
+                const results = [];
+
+                for (let idx = 0; idx < meterIndexes.length; idx += 1) {
+                    const currentMeter = meterIndexes[idx];
+                    const filename = buildFilenameWithMeterIndex(rawFilename, currentMeter, msg);
+                    const outputPath = path.join(outputDir, filename);
+
+                    const captureArgs = ["--capture", outputPath];
+                    if (format !== "bmp") {
+                        captureArgs.push("--format", format);
                     }
 
-                    msg.payload = {
+                    if (zoneArgs.length > 0) {
+                        captureArgs.push("--zone", ...zoneArgs.map((value) => value.toString()));
+                    }
+
+                    captureArgs.push("--meter-index", currentMeter.toString());
+
+                    if (resolvedCkDllPath) {
+                        captureArgs.push("--ck-dll", resolvedCkDllPath);
+                    }
+
+                    node.status({ fill: "blue", shape: "dot", text: `capturing ${idx + 1}/${meterIndexes.length}` });
+                    const { stdout, stderr } = await execFileAsync(resolvedBridgePath, captureArgs, timeout);
+
+                    results.push({
                         output: outputPath,
                         stdout,
                         stderr,
                         bridgePath: resolvedBridgePath,
-                        ckDllPath: msg.ckDllPath,
-                        args,
+                        ckDllPath: resolvedCkDllPath,
+                        args: captureArgs,
                         timeout,
-                        meterIndex
-                    };
-                    node.status({ fill: "green", shape: "dot", text: path.basename(outputPath) });
-                    send(msg);
-                    done();
-                });
+                        meterIndex: currentMeter
+                    });
+                }
+
+                msg.ckDllPath = resolvedCkDllPath;
+                msg.payload = results.length === 1 ? results[0] : results;
+                node.status({ fill: "green", shape: "dot", text: `done (${results.length})` });
+                send(msg);
+                done();
             } catch (err) {
                 node.status({ fill: "red", shape: "ring", text: err.message });
                 node.error(err, msg);
@@ -151,6 +152,34 @@ function buildFilenameWithMeterIndex(pattern, meterIndex, msg) {
     const ext = path.extname(resolved);
     const base = ext ? resolved.slice(0, -ext.length) : resolved;
     return `${base}_meter${meterIndex}${ext}`;
+}
+
+function buildMeterIndexList(rawIndexes, fallback) {
+    if (Array.isArray(rawIndexes)) {
+        const normalized = rawIndexes
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0);
+        if (normalized.length > 0) {
+            return Array.from(new Set(normalized));
+        }
+    }
+    return [fallback];
+}
+
+function execFileAsync(command, args, timeout) {
+    return new Promise((resolve, reject) => {
+        execFile(command, args, { timeout }, (error, stdout, stderr) => {
+            if (error) {
+                const err = new Error(stderr || error.message);
+                err.stdout = stdout;
+                err.stderr = stderr;
+                err.args = args;
+                reject(err);
+                return;
+            }
+            resolve({ stdout, stderr });
+        });
+    });
 }
 
 function parseZone(value) {
