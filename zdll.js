@@ -2,7 +2,7 @@ const { execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const DEFAULT_BRIDGE_PATH = path.join(__dirname, "bin", "CameraBridge.exe");
+const DEFAULT_BRIDGE_PATH = path.resolve(__dirname, "bin", "CameraBridge.exe");
 
 module.exports = function (RED) {
     "use strict";
@@ -11,7 +11,6 @@ module.exports = function (RED) {
         RED.nodes.createNode(this, config);
         const node = this;
 
-        const baseBridgePath = config.bridgePath || "";
         const baseOutputDir = config.outputDir || "";
         const baseFilename = config.defaultFilename || "photo-{{timestamp}}.bmp";
         const baseFormat = config.format || "bmp";
@@ -19,14 +18,14 @@ module.exports = function (RED) {
 
         node.on("input", (msg, send, done) => {
             try {
-                const candidateBridgePath = (msg.bridgePath || baseBridgePath || DEFAULT_BRIDGE_PATH || "").toString().trim();
+                const candidateBridgePath = (msg.bridgePath || DEFAULT_BRIDGE_PATH || "").toString().trim();
                 if (!candidateBridgePath) {
                     throw new Error("未配置 CameraBridge.exe 路径");
                 }
 
                 const resolvedBridgePath = path.isAbsolute(candidateBridgePath)
                     ? candidateBridgePath
-                    : path.resolve(process.cwd(), candidateBridgePath);
+                    : path.resolve(__dirname, candidateBridgePath);
 
                 if (!fs.existsSync(resolvedBridgePath)) {
                     throw new Error(`未找到 CameraBridge.exe: ${resolvedBridgePath}`);

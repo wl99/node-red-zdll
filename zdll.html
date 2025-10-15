@@ -4,10 +4,6 @@
         <input type="text" id="node-input-name" placeholder="Camera Capture">
     </div>
     <div class="form-row">
-        <label for="node-input-bridgePath"><i class="fa fa-cog"></i> CameraBridge.exe 路径</label>
-        <input type="text" id="node-input-bridgePath" placeholder="C:\\path\\to\\CameraBridge.exe">
-    </div>
-    <div class="form-row">
         <label for="node-input-outputDir"><i class="fa fa-folder-open"></i> 输出目录</label>
         <input type="text" id="node-input-outputDir" placeholder="C:\\captures">
     </div>
@@ -40,7 +36,6 @@
         color: 'BurlyWood',
         defaults: {
             name: { value: '' },
-            bridgePath: { value: '', required: true },
             outputDir: { value: '' },
             defaultFilename: { value: 'photo-{{timestamp}}.bmp' },
             format: { value: 'bmp' },
