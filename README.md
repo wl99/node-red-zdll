@@ -15,8 +15,21 @@
 1. 确保 `CKGenCapture.dll` 与插件内 `bin/CameraBridge.exe` 位于同一目录（可将 DLL 复制到 `bin/`）。若许可不允许分发，请按厂商要求单独获取。
 2. 将本插件放入 Node-RED 的 `~/.node-red/node_modules/` 或通过 `npm install` 安装。`package.json` 默认会将 `bin/` 一并发布。
 3. 在 Node-RED 编辑器中拖入 `zdll` 节点，默认固定使用插件内的 `bin/CameraBridge.exe`；如需替换，可在消息中通过 `msg.bridgePath` 指定其它路径。
-4. 设置输出目录、默认文件名（支持 `{{timestamp}}` 占位符），以及可选的 `gray8/bgr24/rgb24` 输出格式或拍摄区域。
-5. 输入消息触发拍照，可额外传入 `msg.filename`、`msg.format`、`msg.zone`、`msg.timeout` 等覆盖配置；执行结果写入 `msg.payload`。
+4. 设置输出目录、默认文件名（支持 `{{timestamp}}` 占位符），选择图像格式，并根据需要填入“测点标识”（每个测点一个整数，常用值为 `1`）和“保存测点索引”。
+5. 输入消息触发拍照，可额外传入 `msg.filename`、`msg.format`、`msg.zone`（数组或以空格分隔的整数）、`msg.meterIndex`、`msg.timeout` 等覆盖配置；执行结果写入 `msg.payload`。
+
+### CameraBridge 命令行
+
+```text
+CameraBridge.exe --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone <n1> <n2> ...] [--meter-index <n>]
+CameraBridge.exe --init
+CameraBridge.exe --info
+CameraBridge.exe --release
+```
+
+- 驱动返回码为 `1` 时表示初始化/拍照成功（程序会换算为退出码 `0`），其他数值请参考厂家文档。
+- `--zone` 参数通常按测点数量提供若干整数，缺省时自动填充为 `1`。
+- `--meter-index` 表示从第几个测点写出文件（默认 1），超出范围时将自动夹取。
 
 ## 重新编译桥接程序
 
@@ -27,3 +40,8 @@ dotnet publish -c Release -r win-x86 --self-contained false
 ```
 
 生成的文件位于 `bin/Release/net6.0/win-x86/publish/`，复制其中的 `CameraBridge.exe`、`.dll`、`.deps.json`、`.runtimeconfig.json` 等到插件 `bin/` 即可。
+
+## 常见问题
+
+- `PhotoCaptureInit 调用失败 (返回码: 1)`：该型号驱动以 `1` 表示成功；桥接程序已自动处理，但如果命令行仍提示失败，请确认相机驱动、授权文件与配置（如 `GenCapture.ini`）齐备后重试。
+- `CKGenCapture.dll` 需与相机厂家提供的所有依赖位于同一目录，并在 32 位 Windows 环境中执行；如缺少 VC++ 运行库或设备驱动，同样会导致初始化失败。

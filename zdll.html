@@ -21,8 +21,12 @@
         </select>
     </div>
     <div class="form-row">
-        <label for="node-input-zone"><i class="fa fa-square"></i> 区域 (left top right bottom...)</label>
-        <input type="text" id="node-input-zone" placeholder="0 0 1920 1080">
+        <label for="node-input-zone"><i class="fa fa-square"></i> 测点标识 (每项一个整数)</label>
+        <input type="text" id="node-input-zone" placeholder="1 1 1">
+    </div>
+    <div class="form-row">
+        <label for="node-input-meterIndex"><i class="fa fa-crosshairs"></i> 保存测点索引</label>
+        <input type="number" id="node-input-meterIndex" min="1" placeholder="1">
     </div>
     <div class="form-row">
         <label for="node-input-timeout"><i class="fa fa-clock-o"></i> 超时时间 (毫秒)</label>
@@ -40,6 +44,7 @@
             defaultFilename: { value: 'photo-{{timestamp}}.bmp' },
             format: { value: 'bmp' },
             zone: { value: '' },
+            meterIndex: { value: 1 },
             timeout: { value: 60000 }
         },
         inputs: 1,

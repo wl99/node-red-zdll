@@ -15,6 +15,7 @@ module.exports = function (RED) {
         const baseFilename = config.defaultFilename || "photo-{{timestamp}}.bmp";
         const baseFormat = config.format || "bmp";
         const baseZone = config.zone || "";
+        const baseMeterIndex = Number(config.meterIndex) > 0 ? Number(config.meterIndex) : 1;
 
         node.on("input", (msg, send, done) => {
             try {
@@ -40,6 +41,8 @@ module.exports = function (RED) {
                 const outputPath = path.join(outputDir, filename);
                 const format = (msg.format || baseFormat || "bmp").toLowerCase();
                 const zone = msg.zone || baseZone;
+                const parsedMeterIndex = Number(msg.meterIndex);
+                const meterIndex = Number.isFinite(parsedMeterIndex) && parsedMeterIndex > 0 ? parsedMeterIndex : baseMeterIndex;
 
                 const args = ["--capture", outputPath];
                 if (format === "bgr24" || format === "rgb24" || format === "gray8") {
@@ -53,6 +56,10 @@ module.exports = function (RED) {
                     if (zoneArgs.length > 0) {
                         args.push("--zone", ...zoneArgs.map((value) => value.toString()));
                     }
+                }
+
+                if (Number.isFinite(meterIndex) && meterIndex > 0) {
+                    args.push("--meter-index", meterIndex.toString());
                 }
 
                 const msgTimeout = Number(msg.timeout);
@@ -79,7 +86,8 @@ module.exports = function (RED) {
                         stderr,
                         bridgePath: resolvedBridgePath,
                         args,
-                        timeout
+                        timeout,
+                        meterIndex
                     };
                     node.status({ fill: "green", shape: "dot", text: path.basename(outputPath) });
                     send(msg);

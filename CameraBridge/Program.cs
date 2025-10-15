@@ -53,6 +53,7 @@ internal static class Program
         string output = args[1];
         PixelFormat format = PixelFormat.Gray8;
         int[]? zone = null;
+        int meterIndex = 1;
 
         for (int i = 2; i < args.Length; i++)
         {
@@ -67,15 +68,26 @@ internal static class Program
                     format = ParseFormat(args[i]);
                     break;
                 case "--zone":
-                    const int zoneLength = 4;
-                    if (i + zoneLength >= args.Length)
+                    var zoneValues = new System.Collections.Generic.List<int>();
+                    while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
                     {
-                        return Fail("--zone 需要 4 个整数参数: left top right bottom");
+                        zoneValues.Add(ParseInt(args[++i], $"zone[{zoneValues.Count}]"));
                     }
-                    zone = new int[zoneLength];
-                    for (int z = 0; z < zoneLength; z++)
+                    if (zoneValues.Count == 0)
                     {
-                        zone[z] = ParseInt(args[++i], $"zone[{z}]");
+                        return Fail("--zone 需要至少 1 个整数参数");
+                    }
+                    zone = zoneValues.ToArray();
+                    break;
+                case "--meter-index":
+                    if (++i >= args.Length)
+                    {
+                        return Fail("--meter-index 需要一个大于 0 的整数");
+                    }
+                    meterIndex = ParseInt(args[i], "meter-index");
+                    if (meterIndex <= 0)
+                    {
+                        return Fail("--meter-index 必须为正整数");
                     }
                     break;
                 default:
@@ -85,7 +97,7 @@ internal static class Program
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output)) ?? ".");
 
-        var options = new CaptureOptions(output, format, zone);
+        var options = new CaptureOptions(output, format, zone, meterIndex);
 
         using var session = new CameraSession();
         session.Initialize();
@@ -95,6 +107,8 @@ internal static class Program
         Console.WriteLine($"厂商: {result.Manufacturer}");
         Console.WriteLine($"分辨率: {result.Width}x{result.Height}");
         Console.WriteLine($"测点数量: {result.MeterCount}");
+        Console.WriteLine($"驱动返回码: {result.DriverCode}");
+        Console.WriteLine($"实际使用测点索引: {result.SelectedMeterIndex} (请求值: {meterIndex})");
 
         if (result.Saved)
         {
@@ -163,7 +177,7 @@ internal static class Program
     private static void PrintHelp()
     {
         Console.WriteLine("CameraBridge 命令行用法:");
-        Console.WriteLine("  --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone left top right bottom]");
+        Console.WriteLine("  --capture <outputPath> [--format gray8|bgr24|rgb24] [--zone <n1> <n2> ...] [--meter-index <n>]");
         Console.WriteLine("  --init");
         Console.WriteLine("  --info");
         Console.WriteLine("  --release");

@@ -14,6 +14,9 @@ internal static class CK
     internal static extern int PhotoCaptureInitWithInfo(ref int width, ref int height, ref int mtrCount, StringBuilder mfrName);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int PhotoCaptureSetting();
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int PhotoCaptureExit();
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]

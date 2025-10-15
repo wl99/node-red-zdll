@@ -4,11 +4,12 @@ namespace CameraBridge;
 
 internal sealed class CaptureOptions
 {
-    public CaptureOptions(string outputPath, PixelFormat format, int[]? zone)
+    public CaptureOptions(string outputPath, PixelFormat format, int[]? zone, int meterIndex)
     {
         OutputPath = outputPath ?? throw new ArgumentNullException(nameof(outputPath));
         Format = format;
         Zone = zone is null ? null : (int[])zone.Clone();
+        MeterIndex = meterIndex > 0 ? meterIndex : 1;
     }
 
     public string OutputPath { get; }
@@ -16,6 +17,8 @@ internal sealed class CaptureOptions
     public PixelFormat Format { get; }
 
     public int[]? Zone { get; }
+
+    public int MeterIndex { get; }
 
     public int BytesPerPixel => Format switch
     {
