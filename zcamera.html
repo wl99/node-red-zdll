@@ -25,12 +25,8 @@
         </select>
     </div>
     <div class="form-row">
-        <label for="node-input-meterIndex"><i class="fa fa-crosshairs"></i> 保存测点索引</label>
-        <input type="number" id="node-input-meterIndex" min="1" placeholder="1">
-    </div>
-    <div class="form-row">
-        <label for="node-input-meterIndexes"><i class="fa fa-list-ol"></i> 测点列表 (如 1,2,3)</label>
-        <input type="text" id="node-input-meterIndexes" placeholder="留空表示使用测点索引">
+        <label for="node-input-meterIndexes"><i class="fa fa-list-ol"></i> 测点编号 (单个或多个)</label>
+        <input type="text" id="node-input-meterIndexes" placeholder="例如 1 或 1,2,3">
     </div>
     <div class="form-row">
         <label for="node-input-timeout"><i class="fa fa-clock-o"></i> 超时时间 (毫秒)</label>
@@ -48,8 +44,7 @@
             ckDllPath: { value: '' },
             defaultFilename: { value: 'photo-{{timestamp}}.bmp' },
             format: { value: 'bmp' },
-            meterIndex: { value: 1 },
-            meterIndexes: { value: '' },
+            meterIndexes: { value: '1' },
             timeout: { value: 60000 }
         },
         inputs: 1,
