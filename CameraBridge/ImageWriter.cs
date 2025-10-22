@@ -136,8 +136,7 @@ internal static class ImageWriter
 
             for (int y = 0; y < height; y++)
             {
-                int sourceIndex = height - 1 - y;
-                IntPtr srcPtr = IntPtr.Add(buffer, sourceIndex * rowBytes);
+                IntPtr srcPtr = IntPtr.Add(buffer, y * rowBytes);
                 Marshal.Copy(srcPtr, srcRow, 0, rowBytes);
 
                 for (int x = 0; x < width; x++)
@@ -180,8 +179,7 @@ internal static class ImageWriter
 
             for (int y = 0; y < height; y++)
             {
-                int sourceIndex = height - 1 - y;
-                IntPtr srcPtr = IntPtr.Add(buffer, sourceIndex * rowBytes);
+                IntPtr srcPtr = IntPtr.Add(buffer, y * rowBytes);
                 Marshal.Copy(srcPtr, srcRow, 0, rowBytes);
 
                 Buffer.BlockCopy(srcRow, 0, destRow, 0, rowBytes);
@@ -216,8 +214,7 @@ internal static class ImageWriter
 
             for (int y = 0; y < height; y++)
             {
-                int sourceIndex = height - 1 - y;
-                IntPtr srcPtr = IntPtr.Add(buffer, sourceIndex * rowBytes);
+                IntPtr srcPtr = IntPtr.Add(buffer, y * rowBytes);
                 Marshal.Copy(srcPtr, srcRow, 0, rowBytes);
 
                 for (int x = 0; x < width; x++)

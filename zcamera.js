@@ -275,7 +275,7 @@ function buildPhotoPayload(results, photoType, photoLabel) {
             return null;
         }
         return {
-            DataType: 0,
+            DataType: 2,
             MeterPosition: result.meterIndex,
             PhotoPath: result.output,
             PhotoType: photoType,
