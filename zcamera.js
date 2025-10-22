@@ -7,6 +7,7 @@ const DEFAULT_CK_DLL_PATH = path.resolve(__dirname, "bin", "CKGenCapture.dll");
 const DEFAULT_OUTPUT_DIR = "D:\\\\Picture";
 const DEFAULT_FILENAME_TEMPLATE = "{{barCode}}_{{meter}}_{{photoType}}.jpg";
 const DEFAULT_FORMAT = "jpg";
+const DEFAULT_OUTPUT_MODE = "path";
 
 module.exports = function (RED) {
     "use strict";
@@ -21,6 +22,7 @@ module.exports = function (RED) {
         const baseCkDllPath = config.ckDllPath || "";
         const baseMeterIndex = Number(config.meterIndex) > 0 ? Number(config.meterIndex) : 1;
         const baseConfiguredMeterIndexes = parseMeterIndexes(config.meterIndexes);
+        const baseOutputMode = normalizeOutputMode(config.outputMode) || DEFAULT_OUTPUT_MODE;
 
         node.on("input", async (msg, send, done) => {
             try {
@@ -66,6 +68,7 @@ module.exports = function (RED) {
                 const filenameTemplate = buildFilename(rawFilename, templateContext);
                 const outputTemplate = ensureExtension(path.join(outputDir, filenameTemplate), outputFormat);
                 const zoneArgs = zone ? parseZone(zone) : [];
+                const outputMode = resolveOutputMode(baseOutputMode, msg);
 
                 const msgTimeout = Number(msg.timeout);
                 const configTimeout = Number(config.timeout);
@@ -99,6 +102,7 @@ module.exports = function (RED) {
                 msg.photoType = resolvedPhotoType;
                 msg.meterPosition = primaryMeterIndex;
                 msg.meterIndexes = meterIndexes;
+                msg.outputMode = outputMode;
 
                 node.status({ fill: "blue", shape: "dot", text: `capturing ${meterIndexes.length}` });
                 const { stdout, stderr } = await execFileAsync(resolvedBridgePath, captureArgs, timeout);
@@ -115,7 +119,12 @@ module.exports = function (RED) {
                     resolution: summary?.resolution,
                     meterCount: summary?.meterCount
                 };
-                const payload = buildPhotoPayload(summary?.results || [], resolvedPhotoType, msg.photoLabel);
+                const payload = buildPhotoPayload(summary?.results || [], {
+                    photoType: resolvedPhotoType,
+                    photoLabel: msg.photoLabel,
+                    outputMode
+                });
+                msg.dataType = payload.dataType;
                 msg.payload = resultCount <= 1 ? payload.single : payload.multiple;
 
                 const statusText = resultCount === 1
@@ -269,32 +278,92 @@ function resolveBarCode(msg) {
     return "";
 }
 
-function buildPhotoPayload(results, photoType, photoLabel) {
+function buildPhotoPayload(results, { photoType, photoLabel, outputMode }) {
+    const dataType = outputMode === "bytes" ? 1 : 2;
+
     const normalize = (result) => {
         if (!result || result.saved === false) {
             return null;
         }
-        return {
-            DataType: 2,
+
+        const entry = {
+            DataType: dataType,
             MeterPosition: result.meterIndex,
-            PhotoPath: result.output,
             PhotoType: photoType,
-            PhotoLabel: photoLabel ?? undefined
+            PhotoLabel: photoLabel ?? undefined,
+            PhotoPath: result.output
         };
+
+        if (dataType === 1) {
+            if (!result.output) {
+                throw new Error("Bridge result missing file path while outputMode is bytes");
+            }
+
+            entry.PhotoContent = fs.readFileSync(result.output);
+        }
+
+        return entry;
     };
 
     if (results.length <= 1) {
         const single = normalize(results[0]);
         return {
             single,
-            multiple: single ? [single] : []
+            multiple: single ? [single] : [],
+            dataType
         };
     }
 
+    const multiple = results.map((result) => normalize(result)).filter(Boolean);
     return {
         single: null,
-        multiple: results.map((result) => normalize(result)).filter(Boolean)
+        multiple,
+        dataType
     };
+}
+
+function normalizeOutputMode(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    if (typeof value === "number") {
+        if (value === 1) {
+            return "bytes";
+        }
+        if (value === 2) {
+            return "path";
+        }
+    }
+
+    const stringValue = String(value).trim().toLowerCase();
+    if (stringValue === "bytes" || stringValue === "stream" || stringValue === "buffer") {
+        return "bytes";
+    }
+    if (stringValue === "path" || stringValue === "file" || stringValue === "filename") {
+        return "path";
+    }
+    if (stringValue === "1") {
+        return "bytes";
+    }
+    if (stringValue === "2") {
+        return "path";
+    }
+    return null;
+}
+
+function resolveOutputMode(baseMode, msg) {
+    const fromDataType = normalizeOutputMode(msg?.dataType);
+    if (fromDataType) {
+        return fromDataType;
+    }
+
+    const fromMsg = normalizeOutputMode(msg?.outputMode ?? msg?.outputType);
+    if (fromMsg) {
+        return fromMsg;
+    }
+
+    return baseMode || DEFAULT_OUTPUT_MODE;
 }
 
 function execFileAsync(command, args, timeout) {

@@ -26,6 +26,13 @@
         </select>
     </div>
     <div class="form-row">
+        <label for="node-input-outputMode"><i class="fa fa-exchange"></i> 输出类型</label>
+        <select id="node-input-outputMode">
+            <option value="path">文件路径</option>
+            <option value="bytes">字节流</option>
+        </select>
+    </div>
+    <div class="form-row">
         <label for="node-input-meterIndexes"><i class="fa fa-list-ol"></i> 测点编号 (单个或多个)</label>
         <input type="text" id="node-input-meterIndexes" placeholder="例如 1 或 1,2,3">
     </div>
@@ -45,6 +52,7 @@
             ckDllPath: { value: '' },
             defaultFilename: { value: '{{barCode}}_{{meter}}_{{photoType}}.jpg' },
             format: { value: 'jpg' },
+            outputMode: { value: 'path' },
             meterIndexes: { value: '1' },
             timeout: { value: 60000 }
         },
