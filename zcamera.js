@@ -4,6 +4,9 @@ const path = require("path");
 
 const DEFAULT_BRIDGE_PATH = path.resolve(__dirname, "bin", "CameraBridge.exe");
 const DEFAULT_CK_DLL_PATH = path.resolve(__dirname, "bin", "CKGenCapture.dll");
+const DEFAULT_OUTPUT_DIR = "D:\\\\Picture";
+const DEFAULT_FILENAME_TEMPLATE = "{{barCode}}_{{meter}}_{{photoType}}.jpg";
+const DEFAULT_FORMAT = "jpg";
 
 module.exports = function (RED) {
     "use strict";
@@ -12,9 +15,9 @@ module.exports = function (RED) {
         RED.nodes.createNode(this, config);
         const node = this;
 
-        const baseOutputDir = config.outputDir || "";
-        const baseFilename = config.defaultFilename || "photo-{{timestamp}}.bmp";
-        const baseFormat = config.format || "bmp";
+        const baseOutputDir = config.outputDir || DEFAULT_OUTPUT_DIR;
+        const baseFilename = config.defaultFilename || DEFAULT_FILENAME_TEMPLATE;
+        const baseFormat = config.format || DEFAULT_FORMAT;
         const baseCkDllPath = config.ckDllPath || "";
         const baseMeterIndex = Number(config.meterIndex) > 0 ? Number(config.meterIndex) : 1;
         const baseConfiguredMeterIndexes = parseMeterIndexes(config.meterIndexes);
@@ -39,20 +42,29 @@ module.exports = function (RED) {
                     fs.mkdirSync(outputDir, { recursive: true });
                 }
 
-                const rawFilename = msg.filename || baseFilename || "photo-{{timestamp}}.bmp";
-                let format = (msg.format || baseFormat || "bmp").toLowerCase();
+                const rawFilename = msg.filename || baseFilename || DEFAULT_FILENAME_TEMPLATE;
+                const requestedFormat = (msg.format || baseFormat || DEFAULT_FORMAT).toString().toLowerCase();
+                const { outputFormat, bridgeFormat } = resolveFormats(requestedFormat);
                 const zone = msg.zone;
                 const parsedMeterIndex = Number(msg.meterIndex);
                 const meterIndex = Number.isFinite(parsedMeterIndex) && parsedMeterIndex > 0 ? parsedMeterIndex : baseMeterIndex;
                 const candidateCkDllPath = (msg.ckDllPath || baseCkDllPath || DEFAULT_CK_DLL_PATH || "").toString().trim();
 
-                if (format !== "bmp" && format !== "bgr24" && format !== "rgb24" && format !== "gray8") {
-                    node.warn(`Unknown image format ${format}; defaulting to bmp`);
-                    format = "bmp";
-                }
+                const rawMeterIndexes = msg.meterIndexes !== undefined ? msg.meterIndexes : baseConfiguredMeterIndexes;
+                const meterIndexes = buildMeterIndexList(rawMeterIndexes, meterIndex);
+                const primaryMeterIndex = meterIndexes[0];
+                const resolvedPhotoType = resolvePhotoType(msg);
+                const resolvedBarCode = resolveBarCode(msg);
 
-                const filenameTemplate = buildFilename(rawFilename, msg);
-                const outputTemplate = path.join(outputDir, filenameTemplate);
+                const templateContext = {
+                    ...msg,
+                    barCode: resolvedBarCode,
+                    meterPosition: primaryMeterIndex,
+                    meter: primaryMeterIndex,
+                    photoType: resolvedPhotoType
+                };
+                const filenameTemplate = buildFilename(rawFilename, templateContext);
+                const outputTemplate = ensureExtension(path.join(outputDir, filenameTemplate), outputFormat);
                 const zoneArgs = zone ? parseZone(zone) : [];
 
                 const msgTimeout = Number(msg.timeout);
@@ -74,15 +86,19 @@ module.exports = function (RED) {
                     resolvedCkDllPath = candidateAbsolute;
                 }
 
-                const rawMeterIndexes = msg.meterIndexes !== undefined ? msg.meterIndexes : baseConfiguredMeterIndexes;
-                const meterIndexes = buildMeterIndexList(rawMeterIndexes, meterIndex);
                 const captureArgs = buildCaptureArgs({
                     outputTemplate,
-                    format,
+                    bridgeFormat,
                     zoneArgs,
                     meterIndexes,
                     ckDllPath: resolvedCkDllPath
                 });
+
+                msg.format = outputFormat;
+                msg.barCode = resolvedBarCode;
+                msg.photoType = resolvedPhotoType;
+                msg.meterPosition = primaryMeterIndex;
+                msg.meterIndexes = meterIndexes;
 
                 node.status({ fill: "blue", shape: "dot", text: `capturing ${meterIndexes.length}` });
                 const { stdout, stderr } = await execFileAsync(resolvedBridgePath, captureArgs, timeout);
@@ -99,14 +115,11 @@ module.exports = function (RED) {
                     resolution: summary?.resolution,
                     meterCount: summary?.meterCount
                 };
-                if (resultCount === 1) {
-                    msg.payload = summary.results[0];
-                } else {
-                    msg.payload = summary?.results || [];
-                }
+                const payload = buildPhotoPayload(summary?.results || [], resolvedPhotoType, msg.photoLabel);
+                msg.payload = resultCount <= 1 ? payload.single : payload.multiple;
 
                 const statusText = resultCount === 1
-                    ? path.basename(summary.results[0].output)
+                    ? path.basename(payload.single?.PhotoPath || summary.results[0].output)
                     : `done (${resultCount})`;
                 node.status({ fill: "green", shape: "dot", text: statusText });
                 send(msg);
@@ -124,8 +137,10 @@ module.exports = function (RED) {
 
 function buildFilename(pattern, msg) {
     if (typeof pattern !== "string" || pattern.length === 0) {
-        pattern = "photo-{{timestamp}}.bmp";
+        pattern = DEFAULT_FILENAME_TEMPLATE;
     }
+
+    pattern = pattern.replace(/\{\{\s*meterPosition\s*\}\}/gi, "{{meter}}");
 
     const timestamp = Date.now().toString();
     return pattern.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (match, key) => {
@@ -170,11 +185,11 @@ function uniqueMeterIndexes(numbers) {
     return Array.from(new Set(numbers.filter((n) => Number.isFinite(n) && n > 0)));
 }
 
-function buildCaptureArgs({ outputTemplate, format, zoneArgs, meterIndexes, ckDllPath }) {
+function buildCaptureArgs({ outputTemplate, bridgeFormat, zoneArgs, meterIndexes, ckDllPath }) {
     const args = ["--capture", outputTemplate];
 
-    if (format !== "bmp") {
-        args.push("--format", format);
+    if (bridgeFormat && bridgeFormat !== "gray8") {
+        args.push("--format", bridgeFormat);
     }
 
     if (zoneArgs.length > 0) {
@@ -192,6 +207,94 @@ function buildCaptureArgs({ outputTemplate, format, zoneArgs, meterIndexes, ckDl
     }
 
     return args;
+}
+
+function ensureExtension(outputPath, format) {
+    if (!format || (format !== "jpg" && format !== "bmp")) {
+        return outputPath;
+    }
+
+    const desiredExt = `.${format}`;
+    if (outputPath.toLowerCase().endsWith(desiredExt)) {
+        return outputPath;
+    }
+
+    const hasExtension = /\.[^\\/]+$/.test(outputPath);
+    if (hasExtension) {
+        return outputPath.replace(/\.[^\\/.]+$/, desiredExt);
+    }
+
+    return `${outputPath}${desiredExt}`;
+}
+
+function resolveFormats(requested) {
+    if (requested === "jpeg") {
+        requested = "jpg";
+    }
+
+    if (requested === "jpg") {
+        return { outputFormat: "jpg", bridgeFormat: "gray8" };
+    }
+
+    const supported = new Set(["bmp", "gray8", "bgr24", "rgb24"]);
+    if (!supported.has(requested)) {
+        return { outputFormat: "bmp", bridgeFormat: "gray8" };
+    }
+
+    const bridgeFormat = requested === "bmp" ? "gray8" : requested;
+    const outputFormat = requested === "bmp" ? "bmp" : requested;
+    return { outputFormat, bridgeFormat };
+}
+
+function resolvePhotoType(msg) {
+    if (msg.photoType != null && Number.isFinite(Number(msg.photoType))) {
+        return Number(msg.photoType);
+    }
+    if (msg.picType != null && Number.isFinite(Number(msg.picType))) {
+        return Number(msg.picType);
+    }
+    return 1;
+}
+
+function resolveBarCode(msg) {
+    if (msg.barCode) {
+        return msg.barCode;
+    }
+    if (msg.BarCode) {
+        return msg.BarCode;
+    }
+    if (msg.barcode) {
+        return msg.barcode;
+    }
+    return "";
+}
+
+function buildPhotoPayload(results, photoType, photoLabel) {
+    const normalize = (result) => {
+        if (!result || result.saved === false) {
+            return null;
+        }
+        return {
+            DataType: 0,
+            MeterPosition: result.meterIndex,
+            PhotoPath: result.output,
+            PhotoType: photoType,
+            PhotoLabel: photoLabel ?? undefined
+        };
+    };
+
+    if (results.length <= 1) {
+        const single = normalize(results[0]);
+        return {
+            single,
+            multiple: single ? [single] : []
+        };
+    }
+
+    return {
+        single: null,
+        multiple: results.map((result) => normalize(result)).filter(Boolean)
+    };
 }
 
 function execFileAsync(command, args, timeout) {

@@ -5,7 +5,7 @@
     </div>
     <div class="form-row">
         <label for="node-input-outputDir"><i class="fa fa-folder-open"></i> 输出目录</label>
-        <input type="text" id="node-input-outputDir" placeholder="C:\\captures">
+        <input type="text" id="node-input-outputDir" placeholder="D:\\Picture">
     </div>
     <div class="form-row">
         <label for="node-input-ckDllPath"><i class="fa fa-plug"></i> CKGenCapture.dll 路径</label>
@@ -13,11 +13,12 @@
     </div>
     <div class="form-row">
         <label for="node-input-defaultFilename"><i class="fa fa-image"></i> 默认文件名</label>
-        <input type="text" id="node-input-defaultFilename" placeholder="photo-{{timestamp}}.bmp">
+        <input type="text" id="node-input-defaultFilename" placeholder="{{barCode}}_{{meter}}_{{photoType}}.jpg">
     </div>
     <div class="form-row">
         <label for="node-input-format"><i class="fa fa-paint-brush"></i> 图像格式</label>
         <select id="node-input-format">
+            <option value="jpg">jpg</option>
             <option value="bmp">bmp</option>
             <option value="gray8">gray8</option>
             <option value="bgr24">bgr24</option>
@@ -40,10 +41,10 @@
         color: 'BurlyWood',
         defaults: {
             name: { value: '' },
-            outputDir: { value: '' },
+            outputDir: { value: 'D:\\Picture' },
             ckDllPath: { value: '' },
-            defaultFilename: { value: 'photo-{{timestamp}}.bmp' },
-            format: { value: 'bmp' },
+            defaultFilename: { value: '{{barCode}}_{{meter}}_{{photoType}}.jpg' },
+            format: { value: 'jpg' },
             meterIndexes: { value: '1' },
             timeout: { value: 60000 }
         },

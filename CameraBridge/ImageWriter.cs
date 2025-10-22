@@ -1,6 +1,10 @@
 using System;
+using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using DrawingPixelFormat = System.Drawing.Imaging.PixelFormat;
+using ImageFormat = System.Drawing.Imaging.ImageFormat;
+using ImageLockMode = System.Drawing.Imaging.ImageLockMode;
 
 namespace CameraBridge;
 
@@ -12,6 +16,10 @@ internal static class ImageWriter
         if (extension == ".bmp")
         {
             SaveAsBmp(path, buffer, width, height, format);
+        }
+        else if (extension == ".jpg" || extension == ".jpeg")
+        {
+            SaveAsJpeg(path, buffer, width, height, format);
         }
         else
         {
@@ -96,4 +104,144 @@ internal static class ImageWriter
     };
 
     private static int AlignTo4(int value) => (value + 3) & ~3;
+
+    private static void SaveAsJpeg(string path, IntPtr buffer, int width, int height, PixelFormat format)
+    {
+        using var bitmap = CreateBitmap(buffer, width, height, format);
+        bitmap.Save(path, ImageFormat.Jpeg);
+    }
+
+    private static Bitmap CreateBitmap(IntPtr buffer, int width, int height, PixelFormat format)
+    {
+        return format switch
+        {
+            PixelFormat.Gray8 => CreateGrayBitmap(buffer, width, height),
+            PixelFormat.Bgr24 => CreateBgrBitmap(buffer, width, height),
+            PixelFormat.Rgb24 => CreateRgbBitmap(buffer, width, height),
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "未知像素格式")
+        };
+    }
+
+    private static Bitmap CreateGrayBitmap(IntPtr buffer, int width, int height)
+    {
+        var bitmap = new Bitmap(width, height, DrawingPixelFormat.Format24bppRgb);
+        var data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, DrawingPixelFormat.Format24bppRgb);
+
+        try
+        {
+            int rowBytes = width;
+            int stride = data.Stride;
+            byte[] srcRow = new byte[rowBytes];
+            byte[] destRow = new byte[stride];
+
+            for (int y = 0; y < height; y++)
+            {
+                int sourceIndex = height - 1 - y;
+                IntPtr srcPtr = IntPtr.Add(buffer, sourceIndex * rowBytes);
+                Marshal.Copy(srcPtr, srcRow, 0, rowBytes);
+
+                for (int x = 0; x < width; x++)
+                {
+                    byte value = srcRow[x];
+                    int offset = x * 3;
+                    destRow[offset] = value;
+                    destRow[offset + 1] = value;
+                    destRow[offset + 2] = value;
+                }
+
+                if (stride > width * 3)
+                {
+                    Array.Clear(destRow, width * 3, stride - width * 3);
+                }
+
+                IntPtr destPtr = IntPtr.Add(data.Scan0, y * stride);
+                Marshal.Copy(destRow, 0, destPtr, stride);
+            }
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+
+        return bitmap;
+    }
+
+    private static Bitmap CreateBgrBitmap(IntPtr buffer, int width, int height)
+    {
+        var bitmap = new Bitmap(width, height, DrawingPixelFormat.Format24bppRgb);
+        var data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, DrawingPixelFormat.Format24bppRgb);
+
+        try
+        {
+            int rowBytes = width * 3;
+            int stride = data.Stride;
+            byte[] srcRow = new byte[rowBytes];
+            byte[] destRow = new byte[stride];
+
+            for (int y = 0; y < height; y++)
+            {
+                int sourceIndex = height - 1 - y;
+                IntPtr srcPtr = IntPtr.Add(buffer, sourceIndex * rowBytes);
+                Marshal.Copy(srcPtr, srcRow, 0, rowBytes);
+
+                Buffer.BlockCopy(srcRow, 0, destRow, 0, rowBytes);
+                if (stride > rowBytes)
+                {
+                    Array.Clear(destRow, rowBytes, stride - rowBytes);
+                }
+
+                IntPtr destPtr = IntPtr.Add(data.Scan0, y * stride);
+                Marshal.Copy(destRow, 0, destPtr, stride);
+            }
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+
+        return bitmap;
+    }
+
+    private static Bitmap CreateRgbBitmap(IntPtr buffer, int width, int height)
+    {
+        var bitmap = new Bitmap(width, height, DrawingPixelFormat.Format24bppRgb);
+        var data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, DrawingPixelFormat.Format24bppRgb);
+
+        try
+        {
+            int rowBytes = width * 3;
+            int stride = data.Stride;
+            byte[] srcRow = new byte[rowBytes];
+            byte[] destRow = new byte[stride];
+
+            for (int y = 0; y < height; y++)
+            {
+                int sourceIndex = height - 1 - y;
+                IntPtr srcPtr = IntPtr.Add(buffer, sourceIndex * rowBytes);
+                Marshal.Copy(srcPtr, srcRow, 0, rowBytes);
+
+                for (int x = 0; x < width; x++)
+                {
+                    int offset = x * 3;
+                    destRow[offset] = srcRow[offset + 2];
+                    destRow[offset + 1] = srcRow[offset + 1];
+                    destRow[offset + 2] = srcRow[offset];
+                }
+
+                if (stride > rowBytes)
+                {
+                    Array.Clear(destRow, rowBytes, stride - rowBytes);
+                }
+
+                IntPtr destPtr = IntPtr.Add(data.Scan0, y * stride);
+                Marshal.Copy(destRow, 0, destPtr, stride);
+            }
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+
+        return bitmap;
+    }
 }
