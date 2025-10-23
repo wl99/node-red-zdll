@@ -101,7 +101,9 @@ module.exports = function (RED) {
                 });
 
                 msg.format = outputFormat;
-                msg.barCode = resolvedBarCode;
+                if (resolvedBarCode) {
+                    msg.barCode = resolvedBarCode;
+                }
                 msg.photoType = resolvedPhotoType;
                 msg.meterPosition = primaryMeterIndex;
                 msg.meterIndexes = meterIndexes;
@@ -123,7 +125,13 @@ module.exports = function (RED) {
                     resolution: summary?.resolution,
                     meterCount: summary?.meterCount
                 };
-                const payload = buildPhotoPayload(summary?.results || [], {
+                const processedResults = processCaptureResults(summary?.results || [], {
+                    photoType: resolvedPhotoType,
+                    barCodeMap,
+                    warn: (message) => node.warn(message)
+                });
+
+                const payload = buildPhotoPayload(processedResults, {
                     photoType: resolvedPhotoType,
                     photoLabel: msg.photoLabel,
                     outputMode,
@@ -133,7 +141,7 @@ module.exports = function (RED) {
                 msg.payload = resultCount <= 1 ? payload.single : payload.multiple;
 
                 const statusText = resultCount === 1
-                    ? path.basename(payload.single?.PhotoPath || summary.results[0].output)
+                    ? path.basename(payload.single?.PhotoPath || processedResults[0]?.output)
                     : `done (${resultCount})`;
                 node.status({ fill: "green", shape: "dot", text: statusText });
                 send(msg);
@@ -555,4 +563,49 @@ function parseZone(value) {
         return parts.map(Number).filter((num) => Number.isFinite(num));
     }
     return [];
+}
+
+function processCaptureResults(results, { photoType, barCodeMap, warn }) {
+    if (!Array.isArray(results)) {
+        return [];
+    }
+
+    return results.map((result) => {
+        if (!result || result.saved === false || !result.output) {
+            return result;
+        }
+
+        const meterIndex = result.meterIndex;
+        const barCode = barCodeMap?.[meterIndex];
+        if (!barCode) {
+            return result;
+        }
+
+        try {
+            const originalPath = result.output;
+            const directory = path.dirname(originalPath);
+            const extension = path.extname(originalPath);
+            const desiredName = `${barCode}_${meterIndex}_${photoType}${extension}`;
+            const desiredPath = path.join(directory, desiredName);
+
+            if (path.normalize(desiredPath) === path.normalize(originalPath)) {
+                return result;
+            }
+
+            if (fs.existsSync(desiredPath)) {
+                fs.unlinkSync(desiredPath);
+            }
+
+            fs.renameSync(originalPath, desiredPath);
+            return {
+                ...result,
+                output: desiredPath
+            };
+        } catch (error) {
+            if (typeof warn === "function") {
+                warn(`Failed to rename photo for meter ${meterIndex}: ${error.message}`);
+            }
+            return result;
+        }
+    });
 }
