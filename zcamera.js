@@ -52,11 +52,14 @@ module.exports = function (RED) {
                 const meterIndex = Number.isFinite(parsedMeterIndex) && parsedMeterIndex > 0 ? parsedMeterIndex : baseMeterIndex;
                 const candidateCkDllPath = (msg.ckDllPath || baseCkDllPath || DEFAULT_CK_DLL_PATH || "").toString().trim();
 
-                const rawMeterIndexes = msg.meterIndexes !== undefined ? msg.meterIndexes : baseConfiguredMeterIndexes;
-                const meterIndexes = buildMeterIndexList(rawMeterIndexes, meterIndex);
-                const primaryMeterIndex = meterIndexes[0];
+                // Consolidate 表位/条码配置，支持 msg.barCodeMap
+                const { meterIndexes, primaryMeterIndex, barCodeMap, firstBarCode } = resolveMeterInputs({
+                    msg,
+                    fallbackMeterIndex: meterIndex,
+                    fallbackIndexes: baseConfiguredMeterIndexes
+                });
                 const resolvedPhotoType = resolvePhotoType(msg);
-                const resolvedBarCode = resolveBarCode(msg);
+                const resolvedBarCode = firstBarCode ?? resolveBarCode(msg, primaryMeterIndex, barCodeMap);
 
                 const templateContext = {
                     ...msg,
@@ -102,6 +105,7 @@ module.exports = function (RED) {
                 msg.photoType = resolvedPhotoType;
                 msg.meterPosition = primaryMeterIndex;
                 msg.meterIndexes = meterIndexes;
+                msg.barCodeMap = barCodeMap;
                 msg.outputMode = outputMode;
 
                 node.status({ fill: "blue", shape: "dot", text: `capturing ${meterIndexes.length}` });
@@ -122,7 +126,8 @@ module.exports = function (RED) {
                 const payload = buildPhotoPayload(summary?.results || [], {
                     photoType: resolvedPhotoType,
                     photoLabel: msg.photoLabel,
-                    outputMode
+                    outputMode,
+                    barCodeMap
                 });
                 msg.dataType = payload.dataType;
                 msg.payload = resultCount <= 1 ? payload.single : payload.multiple;
@@ -172,6 +177,52 @@ function buildMeterIndexList(rawIndexes, fallback) {
     return [fallback];
 }
 
+function resolveMeterInputs({ msg, fallbackMeterIndex, fallbackIndexes }) {
+    // 汇总节点配置与消息中的条码/表位信息，生成唯一的 meter 索引数组
+    let barCodeMap = {};
+    let firstBarCode = null;
+    const collectedIndexes = [];
+
+    if (isPlainObject(msg?.barCodeMap)) {
+        const normalized = normalizeBarCodeMapInput(msg.barCodeMap);
+        barCodeMap = normalized.map;
+        collectedIndexes.push(...normalized.meterIndexes);
+        if (normalized.firstBarCode) {
+            firstBarCode = normalized.firstBarCode;
+        }
+    }
+
+    if (msg.meterIndexes !== undefined) {
+        const parsedMsgIndexes = parseMeterIndexes(msg.meterIndexes);
+        if (parsedMsgIndexes.length > 0) {
+            collectedIndexes.push(...parsedMsgIndexes);
+        }
+    }
+
+    if (collectedIndexes.length === 0 && Array.isArray(fallbackIndexes) && fallbackIndexes.length > 0) {
+        collectedIndexes.push(...fallbackIndexes);
+    }
+
+    const combinedIndexes = collectedIndexes.length > 0 ? collectedIndexes : undefined;
+    let meterIndexes = buildMeterIndexList(combinedIndexes, fallbackMeterIndex);
+    if (!Array.isArray(meterIndexes) || meterIndexes.length === 0) {
+        meterIndexes = [fallbackMeterIndex];
+    }
+
+    const primaryMeterIndex = meterIndexes[0] || fallbackMeterIndex;
+
+    if (firstBarCode === null && barCodeMap[primaryMeterIndex]) {
+        firstBarCode = barCodeMap[primaryMeterIndex];
+    }
+
+    return {
+        meterIndexes,
+        primaryMeterIndex,
+        barCodeMap,
+        firstBarCode
+    };
+}
+
 function parseMeterIndexes(value) {
     if (Array.isArray(value)) {
         return uniqueMeterIndexes(value.map(Number));
@@ -192,6 +243,87 @@ function parseMeterIndexes(value) {
 
 function uniqueMeterIndexes(numbers) {
     return Array.from(new Set(numbers.filter((n) => Number.isFinite(n) && n > 0)));
+}
+
+function normalizeBarCodeMapInput(input) {
+    const map = {};
+    const meterIndexes = [];
+    let firstBarCode = null;
+
+    for (const [key, value] of Object.entries(input)) {
+        let meterIndex = NaN;
+        let barCode = null;
+
+        if (value && typeof value === "object") {
+            meterIndex = extractMeterIndex(value);
+            barCode = resolveBarCodeFromEntry(value);
+        }
+
+        if (!Number.isFinite(meterIndex) || meterIndex <= 0) {
+            const numericKey = Number(key);
+            if (Number.isFinite(numericKey) && numericKey > 0) {
+                meterIndex = numericKey;
+            }
+        }
+
+        if (!barCode && typeof key === "string" && key.trim().length > 0) {
+            barCode = key.trim();
+        }
+
+        if (Number.isFinite(meterIndex) && meterIndex > 0 && barCode) {
+            if (!map[meterIndex]) {
+                map[meterIndex] = barCode;
+                meterIndexes.push(meterIndex);
+                if (firstBarCode === null) {
+                    firstBarCode = barCode;
+                }
+            }
+        }
+    }
+
+    return { map, meterIndexes, firstBarCode };
+}
+
+function extractMeterIndex(entry) {
+    if (!entry || typeof entry !== "object") {
+        return NaN;
+    }
+
+    const candidates = [
+        entry.meterPosition,
+        entry.meterIndex,
+        entry.meterNo,
+        entry.MeterPosition,
+        entry.MeterIndex,
+        entry.MeterNo,
+        entry.position,
+        entry.index,
+        entry.meter
+    ];
+
+    for (const candidate of candidates) {
+        const num = Number(candidate);
+        if (Number.isFinite(num) && num > 0) {
+            return num;
+        }
+    }
+
+    return NaN;
+}
+
+function resolveBarCodeFromEntry(entry) {
+    if (!entry || typeof entry !== "object") {
+        return null;
+    }
+
+    const candidates = [entry.barCode, entry.BarCode, entry.barcode, entry.code];
+    for (const candidate of candidates) {
+        if (typeof candidate === "string" && candidate.trim().length > 0) {
+            return candidate.trim();
+        }
+    }
+
+    return null;
 }
 
 function buildCaptureArgs({ outputTemplate, bridgeFormat, zoneArgs, meterIndexes, ckDllPath }) {
@@ -265,7 +397,10 @@ function resolvePhotoType(msg) {
     return 1;
 }
 
-function resolveBarCode(msg) {
+function resolveBarCode(msg, meterIndex, barCodeMap) {
+    if (barCodeMap && barCodeMap[meterIndex]) {
+        return barCodeMap[meterIndex];
+    }
     if (msg.barCode) {
         return msg.barCode;
     }
@@ -278,7 +413,7 @@ function resolveBarCode(msg) {
     return "";
 }
 
-function buildPhotoPayload(results, { photoType, photoLabel, outputMode }) {
+function buildPhotoPayload(results, { photoType, photoLabel, outputMode, barCodeMap }) {
     const dataType = outputMode === "bytes" ? 1 : 2;
 
     const normalize = (result) => {
@@ -286,13 +421,18 @@ function buildPhotoPayload(results, { photoType, photoLabel, outputMode }) {
             return null;
         }
 
+        const meterIndex = result.meterIndex;
         const entry = {
             DataType: dataType,
-            MeterPosition: result.meterIndex,
+            MeterPosition: meterIndex,
             PhotoType: photoType,
             PhotoLabel: photoLabel ?? undefined,
             PhotoPath: result.output
         };
+        // 当调用方提供条码映射时，为每个表位写回 BarCode
+        if (barCodeMap && barCodeMap[meterIndex]) {
+            entry.BarCode = barCodeMap[meterIndex];
+        }
 
         if (dataType === 1) {
             if (!result.output) {
@@ -364,6 +504,10 @@ function resolveOutputMode(baseMode, msg) {
     }
 
     return baseMode || DEFAULT_OUTPUT_MODE;
+}
+
+function isPlainObject(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function execFileAsync(command, args, timeout) {

@@ -16,7 +16,7 @@
 2. 将本插件放入 Node-RED 的 `~/.node-red/node_modules/` 或通过 `npm install` 安装。`package.json` 默认会将 `bin/` 一并发布。
 3. 在 Node-RED 编辑器中拖入 `zcamera` 节点，默认固定使用插件内的 `bin/CameraBridge.exe` 与 `bin/CKGenCapture.dll`；如需替换，可在节点面板中填写新的路径，或在消息里通过 `msg.bridgePath` / `msg.ckDllPath` 指定。若留空 `CKGenCapture.dll` 路径，桥接程序会自动回退到 `bin/CKGenCapture.dll`。
 4. 节点默认会将照片保存到 `D:\Picture`，文件名模板为 `{{barCode}}_{{meter}}_{{photoType}}.jpg`。模板语法支持 `{{timestamp}}` 以及任意 `msg` 字段（如 `{{orderId}}`），其中 `{{meter}}` 会在多表位拍照时被实际表位号替换。
-5. 触发消息拍照时，可额外传入 `msg.barCode`、`msg.photoType`、`msg.filename`、`msg.format`（默认为 `jpg`）、`msg.meterIndex`（单张）或 `msg.meterIndexes`（数组，多张），`msg.timeout`，以及（如需覆盖默认测点配置）`msg.zone`。执行成功后，`msg.payload` 将返回与 C# `PhotoData` 对齐的结构（单张为对象、多张为数组），包含 `PhotoPath`、`MeterPosition`、`PhotoType`、`DataType` 等字段。若需直接返回图像字节流，可在节点属性选择“输出类型 -> 字节流”或在消息里设置 `msg.outputMode = "bytes"` / `msg.dataType = 1`；此时 `PhotoContent` 字段为 `Buffer`，`DataType` 为 `1`；保持默认则 `DataType = 2`，仅返回 `PhotoPath`。
+5. 触发消息拍照时，可额外传入 `msg.barCode`、`msg.photoType`、`msg.filename`、`msg.format`（默认为 `jpg`）、`msg.meterIndex`（单张）或 `msg.meterIndexes`（数组，多张），`msg.timeout`，以及（如需覆盖默认测点配置）`msg.zone`。若要批量传入条码与表位映射，可仅携带 `msg.barCodeMap`（键可以是表位也可以是条码，值里包含 `position` / `meterPosition` 或其它字段）；节点会自动解析并根据返回的 `meterIndex` 补全 `BarCode`。执行成功后，`msg.payload` 将返回与 C# `PhotoData` 对齐的结构（单张为对象、多张为数组），包含 `PhotoPath`、`MeterPosition`、`PhotoType`、`DataType` 等字段。若需直接返回图像字节流，可在节点属性选择“输出类型 -> 字节流”或在消息里设置 `msg.outputMode = "bytes"` / `msg.dataType = 1`；此时 `PhotoContent` 字段为 `Buffer`，`DataType` 为 `1`；保持默认则 `DataType = 2`，仅返回 `PhotoPath`。
 
 ### CameraBridge 命令行
 
