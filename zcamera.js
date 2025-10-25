@@ -8,18 +8,27 @@ const DEFAULT_OUTPUT_DIR = "D:\\\\Picture";
 const DEFAULT_FILENAME_TEMPLATE = "{{barCode}}_{{meter}}_{{photoType}}.jpg";
 const DEFAULT_FORMAT = "jpg";
 const DEFAULT_OUTPUT_MODE = "path";
+const DEFAULT_GEN_INI_PATH = path.resolve(__dirname, "bin", "GenCapture.ini");
 
 module.exports = function (RED) {
     "use strict";
+
+    function ZcameraConfigNode(config) {
+        RED.nodes.createNode(this, config);
+        this.iniPath = (config.iniPath || "").toString().trim();
+    }
+
+    RED.nodes.registerType("zcamera-config", ZcameraConfigNode);
 
     function ZcameraNode(config) {
         RED.nodes.createNode(this, config);
         const node = this;
 
+        const configNode = config.configNode ? RED.nodes.getNode(config.configNode) : null;
         const baseOutputDir = config.outputDir || DEFAULT_OUTPUT_DIR;
         const baseFilename = config.defaultFilename || DEFAULT_FILENAME_TEMPLATE;
         const baseFormat = config.format || DEFAULT_FORMAT;
-        const baseCkDllPath = config.ckDllPath || "";
+        const baseIniPath = configNode?.iniPath || "";
         const baseMeterIndex = Number(config.meterIndex) > 0 ? Number(config.meterIndex) : 1;
         const baseConfiguredMeterIndexes = parseMeterIndexes(config.meterIndexes);
         const baseOutputMode = normalizeOutputMode(config.outputMode) || DEFAULT_OUTPUT_MODE;
@@ -50,7 +59,8 @@ module.exports = function (RED) {
                 const zone = msg.zone;
                 const parsedMeterIndex = Number(msg.meterIndex);
                 const meterIndex = Number.isFinite(parsedMeterIndex) && parsedMeterIndex > 0 ? parsedMeterIndex : baseMeterIndex;
-                const candidateCkDllPath = (msg.ckDllPath || baseCkDllPath || DEFAULT_CK_DLL_PATH || "").toString().trim();
+                const candidateCkDllPath = (msg.ckDllPath || DEFAULT_CK_DLL_PATH || "").toString().trim();
+                const candidateIniPath = (msg.iniPath || msg.genCaptureIni || msg.configIni || baseIniPath || DEFAULT_GEN_INI_PATH || "").toString().trim();
 
                 // Consolidate 表位/条码配置，支持 msg.barCodeMap
                 const { meterIndexes, primaryMeterIndex, barCodeMap, firstBarCode } = resolveMeterInputs({
@@ -90,6 +100,19 @@ module.exports = function (RED) {
                         throw new Error(`CKGenCapture.dll not found: ${candidateAbsolute}`);
                     }
                     resolvedCkDllPath = candidateAbsolute;
+                }
+
+                try {
+                    ensureGenCaptureIni({
+                        candidateIniPath,
+                        resolvedCkDllPath,
+                        logger: node
+                    });
+                } catch (iniError) {
+                    node.status({ fill: "red", shape: "ring", text: iniError.message });
+                    node.error(iniError, msg);
+                    done(iniError);
+                    return;
                 }
 
                 const captureArgs = buildCaptureArgs({
@@ -563,6 +586,69 @@ function parseZone(value) {
         return parts.map(Number).filter((num) => Number.isFinite(num));
     }
     return [];
+}
+
+function resolveIniSourcePath(candidatePath) {
+    const attempts = [];
+
+    if (candidatePath) {
+        attempts.push(candidatePath);
+        if (!path.isAbsolute(candidatePath)) {
+            attempts.push(path.resolve(process.cwd(), candidatePath));
+            attempts.push(path.resolve(__dirname, candidatePath));
+        }
+    }
+
+    attempts.push(DEFAULT_GEN_INI_PATH);
+
+    for (const attempt of attempts) {
+        if (!attempt) {
+            continue;
+        }
+        try {
+            const stats = fs.statSync(attempt);
+            if (stats.isFile()) {
+                return attempt;
+            }
+            if (stats.isDirectory()) {
+                const nested = path.join(attempt, "GenCapture.ini");
+                if (fs.existsSync(nested) && fs.statSync(nested).isFile()) {
+                    return nested;
+                }
+            }
+        } catch (err) {
+            // ignore and continue
+        }
+    }
+
+    throw new Error("Unable to locate GenCapture.ini; please check configuration");
+}
+
+function ensureGenCaptureIni({ candidateIniPath, resolvedCkDllPath, logger }) {
+    const targetDllPath = resolvedCkDllPath || DEFAULT_CK_DLL_PATH;
+    const targetDir = path.dirname(targetDllPath);
+    if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const targetIniPath = path.join(targetDir, "GenCapture.ini");
+    const sourceIniPath = resolveIniSourcePath(candidateIniPath);
+
+    if (path.normalize(sourceIniPath) === path.normalize(targetIniPath)) {
+        return;
+    }
+
+    try {
+        if (logger?.log) {
+            logger.log(`zcamera: using GenCapture.ini from ${sourceIniPath}`);
+        }
+        fs.copyFileSync(sourceIniPath, targetIniPath);
+    } catch (error) {
+        if (logger?.warn) {
+            logger.warn(`zcamera: failed to copy GenCapture.ini (${error.message})`);
+        }
+        throw new Error(`Unable to copy GenCapture.ini to ${targetDir}`);
+    }
 }
 
 function processCaptureResults(results, { photoType, barCodeMap, warn }) {

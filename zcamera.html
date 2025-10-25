@@ -8,8 +8,8 @@
         <input type="text" id="node-input-outputDir" placeholder="D:\\Picture">
     </div>
     <div class="form-row">
-        <label for="node-input-ckDllPath"><i class="fa fa-plug"></i> CKGenCapture.dll 路径</label>
-        <input type="text" id="node-input-ckDllPath" placeholder="bin\\CKGenCapture.dll">
+        <label for="node-input-configNode"><i class="fa fa-cog"></i> 相机配置</label>
+        <input type="text" id="node-input-configNode">
     </div>
     <div class="form-row">
         <label for="node-input-defaultFilename"><i class="fa fa-image"></i> 默认文件名</label>
@@ -49,7 +49,7 @@
         defaults: {
             name: { value: '' },
             outputDir: { value: 'D:\\Picture' },
-            ckDllPath: { value: '' },
+            configNode: { type: 'zcamera-config' },
             defaultFilename: { value: '{{barCode}}_{{meter}}_{{photoType}}.jpg' },
             format: { value: 'jpg' },
             outputMode: { value: 'path' },
@@ -65,6 +65,30 @@
         },
         labelStyle: function () {
             return this.name ? 'node_label_italic' : '';
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="zcamera-config">
+    <div class="form-row">
+        <label for="node-config-input-name"><i class="fa fa-tag"></i> 名称</label>
+        <input type="text" id="node-config-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-iniPath"><i class="fa fa-file"></i> GenCapture.ini 路径</label>
+        <input type="text" id="node-config-input-iniPath" placeholder="例如 C:\\camera\\GenCapture.ini">
+    </div>
+</script>
+
+<script type="text/javascript">
+    RED.nodes.registerType('zcamera-config', {
+        category: 'config',
+        defaults: {
+            name: { value: '' },
+            iniPath: { value: '' }
+        },
+        label: function () {
+            return this.name || (this.iniPath ? this.iniPath : 'zcamera-config');
         }
     });
 </script>
