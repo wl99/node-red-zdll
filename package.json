@@ -1,6 +1,6 @@
 {
   "name": "node-red-zcamera",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Node-RED node for invoking a bundled CameraBridge.exe to drive CKGenCapture.dll cameras and persist captures under D:\\\\Picture",
   "keywords": [
     "node-red",

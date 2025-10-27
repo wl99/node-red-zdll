@@ -123,31 +123,12 @@ module.exports = function (RED) {
                     ckDllPath: resolvedCkDllPath
                 });
 
-                msg.format = outputFormat;
-                if (resolvedBarCode) {
-                    msg.barCode = resolvedBarCode;
-                }
-                msg.photoType = resolvedPhotoType;
-                msg.meterPosition = primaryMeterIndex;
-                msg.meterIndexes = meterIndexes;
-                msg.barCodeMap = barCodeMap;
-                msg.outputMode = outputMode;
-
                 node.status({ fill: "blue", shape: "dot", text: `capturing ${meterIndexes.length}` });
-                const { stdout, stderr } = await execFileAsync(resolvedBridgePath, captureArgs, timeout);
+                const { stdout } = await execFileAsync(resolvedBridgePath, captureArgs, timeout);
 
                 const summary = parseBridgeOutput(stdout);
                 const resultCount = Array.isArray(summary?.results) ? summary.results.length : 0;
 
-                msg.ckDllPath = resolvedCkDllPath;
-                msg.stdout = stdout;
-                msg.stderr = stderr;
-                msg.args = captureArgs;
-                msg.bridge = {
-                    manufacturer: summary?.manufacturer,
-                    resolution: summary?.resolution,
-                    meterCount: summary?.meterCount
-                };
                 const processedResults = processCaptureResults(summary?.results || [], {
                     photoType: resolvedPhotoType,
                     barCodeMap,
@@ -160,7 +141,6 @@ module.exports = function (RED) {
                     outputMode,
                     barCodeMap
                 });
-                msg.dataType = payload.dataType;
                 msg.payload = resultCount <= 1 ? payload.single : payload.multiple;
 
                 const statusText = resultCount === 1
