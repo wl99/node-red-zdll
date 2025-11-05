@@ -9,6 +9,16 @@ const DEFAULT_FILENAME_TEMPLATE = "{{barCode}}_{{meter}}_{{photoType}}.jpg";
 const DEFAULT_FORMAT = "jpg";
 const DEFAULT_OUTPUT_MODE = "path";
 const DEFAULT_GEN_INI_PATH = path.resolve(__dirname, "bin", "GenCapture.ini");
+const PHOTO_LABEL_MAP = {
+    1: "瞬时",
+    2: "上电前",
+    3: "上电后",
+    4: "总",
+    5: "尖",
+    6: "峰",
+    7: "平",
+    8: "谷"
+};
 
 module.exports = function (RED) {
     "use strict";
@@ -144,7 +154,7 @@ module.exports = function (RED) {
                 msg.payload = resultCount <= 1 ? payload.single : payload.multiple;
 
                 const statusText = resultCount === 1
-                    ? path.basename(payload.single?.PhotoPath || processedResults[0]?.output)
+                    ? path.basename(payload.single?.photoPath || processedResults[0]?.output || "")
                     : `done (${resultCount})`;
                 node.status({ fill: "green", shape: "dot", text: statusText });
                 send(msg);
@@ -425,7 +435,7 @@ function resolveBarCode(msg, meterIndex, barCodeMap) {
 }
 
 function buildPhotoPayload(results, { photoType, photoLabel, outputMode, barCodeMap }) {
-    const dataType = outputMode === "bytes" ? 1 : 2;
+    const dataType = outputMode === "bytes" ? 1 : 0;
 
     const normalize = (result) => {
         if (!result || result.saved === false) {
@@ -433,16 +443,17 @@ function buildPhotoPayload(results, { photoType, photoLabel, outputMode, barCode
         }
 
         const meterIndex = result.meterIndex;
+        const fallbackLabel = PHOTO_LABEL_MAP[Number(photoType)] ?? undefined;
         const entry = {
-            DataType: dataType,
-            MeterPosition: meterIndex,
-            PhotoType: photoType,
-            PhotoLabel: photoLabel ?? undefined,
-            PhotoPath: result.output
+            dataType,
+            meterPosition: meterIndex,
+            photoType,
+            photoLabel: photoLabel ?? fallbackLabel,
+            photoPath: result.output
         };
-        // 当调用方提供条码映射时，为每个表位写回 BarCode
+        // 当调用方提供条码映射时，为每个表位写回条码信息
         if (barCodeMap && barCodeMap[meterIndex]) {
-            entry.BarCode = barCodeMap[meterIndex];
+            entry.barCode = barCodeMap[meterIndex];
         }
 
         if (dataType === 1) {
@@ -450,7 +461,7 @@ function buildPhotoPayload(results, { photoType, photoLabel, outputMode, barCode
                 throw new Error("Bridge result missing file path while outputMode is bytes");
             }
 
-            entry.PhotoContent = fs.readFileSync(result.output);
+            entry.photoContent = fs.readFileSync(result.output);
         }
 
         return entry;
@@ -482,7 +493,7 @@ function normalizeOutputMode(value) {
         if (value === 1) {
             return "bytes";
         }
-        if (value === 2) {
+        if (value === 0 || value === 2) {
             return "path";
         }
     }
@@ -497,7 +508,7 @@ function normalizeOutputMode(value) {
     if (stringValue === "1") {
         return "bytes";
     }
-    if (stringValue === "2") {
+    if (stringValue === "0" || stringValue === "2") {
         return "path";
     }
     return null;
