@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using DrawingPixelFormat = System.Drawing.Imaging.PixelFormat;
 using ImageFormat = System.Drawing.Imaging.ImageFormat;
 using ImageLockMode = System.Drawing.Imaging.ImageLockMode;
@@ -114,14 +115,26 @@ internal static class ImageWriter
     private static void SaveAsJpeg(string path, IntPtr buffer, int width, int height, PixelFormat format)
     {
         using var bitmap = CreateBitmap(buffer, width, height, format);
-        try
+
+        const int maxAttempts = 5;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            bitmap.Save(path, ImageFormat.Jpeg);
+            try
+            {
+                TryWriteJpeg(path, bitmap);
+                return;
+            }
+            catch (Exception ex) when (IsFileInUse(ex) && attempt < maxAttempts)
+            {
+                Thread.Sleep(GetRetryDelay(attempt));
+            }
+            catch (Exception ex)
+            {
+                throw WrapSaveException(path, ex);
+            }
         }
-        catch (System.Runtime.InteropServices.ExternalException ex)
-        {
-            throw new InvalidOperationException($"保存JPEG失败: {path}. 建议检查路径是否可写或文件是否被占用。原始错误: {ex.Message}", ex);
-        }
+
+        throw new InvalidOperationException($"保存JPEG失败: {path}. 文件在多次重试后仍被其他进程占用。");
     }
 
     private static Bitmap CreateBitmap(IntPtr buffer, int width, int height, PixelFormat format)
@@ -253,5 +266,61 @@ internal static class ImageWriter
         }
 
         return bitmap;
+    }
+
+    private static void TryWriteJpeg(string path, Bitmap bitmap)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex) when (IsFileInUse(ex))
+        {
+            throw;
+        }
+
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+            bitmap.Save(stream, ImageFormat.Jpeg);
+        }
+        catch (ExternalException ex) when (IsFileInUse(ex))
+        {
+            throw;
+        }
+    }
+
+    private static TimeSpan GetRetryDelay(int attempt)
+    {
+        int delayMs = Math.Min(150 * attempt, 1000);
+        return TimeSpan.FromMilliseconds(delayMs);
+    }
+
+    private static bool IsFileInUse(Exception ex)
+    {
+        if (ex is IOException ioEx)
+        {
+            return ioEx.HResult == unchecked((int)0x80070020) // ERROR_SHARING_VIOLATION
+                   || ioEx.HResult == unchecked((int)0x80070021); // ERROR_LOCK_VIOLATION
+        }
+
+        if (ex is ExternalException externalEx)
+        {
+            return externalEx.HResult == unchecked((int)0x80004005) // E_FAIL (generic GDI+ lock)
+                   || externalEx.HResult == unchecked((int)0x80030020); // STG_E_SHAREVIOLATION
+        }
+
+        return ex.InnerException != null && IsFileInUse(ex.InnerException);
+    }
+
+    private static InvalidOperationException WrapSaveException(string path, Exception ex)
+    {
+        string hint = IsFileInUse(ex)
+            ? "文件可能正被其他进程读取，请确认没有并发访问。"
+            : "建议检查路径是否可写或磁盘是否有足够空间。";
+        return new InvalidOperationException($"保存JPEG失败: {path}. {hint}", ex);
     }
 }
