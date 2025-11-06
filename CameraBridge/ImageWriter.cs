@@ -12,6 +12,12 @@ internal static class ImageWriter
 {
     public static void Write(string path, IntPtr buffer, int width, int height, PixelFormat format)
     {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         string extension = Path.GetExtension(path).ToLowerInvariant();
         if (extension == ".bmp")
         {
@@ -108,7 +114,14 @@ internal static class ImageWriter
     private static void SaveAsJpeg(string path, IntPtr buffer, int width, int height, PixelFormat format)
     {
         using var bitmap = CreateBitmap(buffer, width, height, format);
-        bitmap.Save(path, ImageFormat.Jpeg);
+        try
+        {
+            bitmap.Save(path, ImageFormat.Jpeg);
+        }
+        catch (System.Runtime.InteropServices.ExternalException ex)
+        {
+            throw new InvalidOperationException($"保存JPEG失败: {path}. 建议检查路径是否可写或文件是否被占用。原始错误: {ex.Message}", ex);
+        }
     }
 
     private static Bitmap CreateBitmap(IntPtr buffer, int width, int height, PixelFormat format)

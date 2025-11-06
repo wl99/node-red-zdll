@@ -180,6 +180,10 @@ function buildFilename(pattern, msg) {
     const timestamp = Date.now().toString();
     return pattern.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (match, key) => {
         const trimmedKey = key.trim();
+        if (trimmedKey.toLowerCase() === "meter") {
+            // 保留 {{meter}} 占位符，交给 CameraBridge 根据表位填充，避免重复追加 _meter 后缀
+            return match;
+        }
         if (trimmedKey === "timestamp") {
             return timestamp;
         }
