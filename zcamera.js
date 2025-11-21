@@ -1,6 +1,7 @@
 const { execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const fsPromises = fs.promises;
 
 const DEFAULT_BRIDGE_PATH = path.resolve(__dirname, "bin", "CameraBridge.exe");
 const DEFAULT_CK_DLL_PATH = path.resolve(__dirname, "bin", "CKGenCapture.dll");
@@ -139,7 +140,7 @@ module.exports = function (RED) {
                 const summary = parseBridgeOutput(stdout);
                 const resultCount = Array.isArray(summary?.results) ? summary.results.length : 0;
 
-                const processedResults = processCaptureResults(summary?.results || [], {
+                const processedResults = await processCaptureResults(summary?.results || [], {
                     photoType: resolvedPhotoType,
                     barCodeMap,
                     warn: (message) => node.warn(message)
@@ -646,47 +647,140 @@ function ensureGenCaptureIni({ candidateIniPath, resolvedCkDllPath, logger }) {
     }
 }
 
-function processCaptureResults(results, { photoType, barCodeMap, warn }) {
+async function processCaptureResults(results, { photoType, barCodeMap, warn }) {
     if (!Array.isArray(results)) {
         return [];
     }
 
-    return results.map((result) => {
+    const processed = [];
+
+    for (const result of results) {
         if (!result || result.saved === false || !result.output) {
-            return result;
+            processed.push(result);
+            continue;
         }
 
         const meterIndex = result.meterIndex;
         const barCode = barCodeMap?.[meterIndex];
-        if (!barCode) {
-            return result;
+        const sanitizedPath = sanitizeCapturePath(result.output);
+
+        if (!barCode || !sanitizedPath) {
+            if (sanitizedPath && sanitizedPath !== result.output) {
+                processed.push({
+                    ...result,
+                    output: sanitizedPath
+                });
+            } else {
+                processed.push(result);
+            }
+            continue;
         }
 
         try {
-            const originalPath = result.output;
-            const directory = path.dirname(originalPath);
-            const extension = path.extname(originalPath);
+            const directory = path.dirname(sanitizedPath);
+            const extension = path.extname(sanitizedPath);
             const desiredName = `${barCode}_${meterIndex}_${photoType}${extension}`;
             const desiredPath = path.join(directory, desiredName);
 
-            if (path.normalize(desiredPath) === path.normalize(originalPath)) {
-                return result;
+            if (pathsEqual(desiredPath, sanitizedPath)) {
+                processed.push({
+                    ...result,
+                    output: sanitizedPath
+                });
+                continue;
             }
 
-            if (fs.existsSync(desiredPath)) {
-                fs.unlinkSync(desiredPath);
-            }
-
-            fs.renameSync(originalPath, desiredPath);
-            return {
+            const renamedPath = await renameWithRetries(sanitizedPath, desiredPath);
+            processed.push({
                 ...result,
-                output: desiredPath
-            };
+                output: renamedPath
+            });
         } catch (error) {
             if (typeof warn === "function") {
                 warn(`Failed to rename photo for meter ${meterIndex}: ${error.message}`);
             }
-            return result;
+            processed.push({
+                ...result,
+                output: sanitizedPath
+            });
         }
-    });
+    }
+
+    return processed;
+}
+
+function sanitizeCapturePath(rawPath) {
+    if (typeof rawPath !== "string") {
+        return "";
+    }
+
+    let sanitized = rawPath.trim();
+    if (!sanitized) {
+        return "";
+    }
+
+    if ((sanitized.startsWith("\"") && sanitized.endsWith("\"")) || (sanitized.startsWith("'") && sanitized.endsWith("'"))) {
+        sanitized = sanitized.slice(1, -1).trim();
+    }
+
+    if (!sanitized) {
+        return "";
+    }
+
+    if (path.sep === "\\") {
+        sanitized = sanitized.replace(/\//g, "\\");
+    } else {
+        sanitized = sanitized.replace(/\\/g, "/");
+    }
+
+    return sanitized;
+}
+
+function pathsEqual(a, b) {
+    if (!a || !b) {
+        return false;
+    }
+
+    return normalizePathForCompare(a) === normalizePathForCompare(b);
+}
+
+function normalizePathForCompare(filePath) {
+    return path.normalize(filePath).replace(/\\/g, "/").toLowerCase();
+}
+
+async function renameWithRetries(originalPath, desiredPath, options = {}) {
+    const attempts = Math.max(1, options.attempts ?? 4);
+    const delayMs = Math.max(0, options.delayMs ?? 150);
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+            await removeFileIfExists(desiredPath);
+            await fsPromises.rename(originalPath, desiredPath);
+            return desiredPath;
+        } catch (error) {
+            if (error.code !== "ENOENT" || attempt === attempts - 1) {
+                throw error;
+            }
+            await sleep(delayMs);
+        }
+    }
+
+    return desiredPath;
+}
+
+async function removeFileIfExists(targetPath) {
+    try {
+        await fsPromises.unlink(targetPath);
+    } catch (error) {
+        if (error.code !== "ENOENT") {
+            throw error;
+        }
+    }
+}
+
+function sleep(duration) {
+    if (duration <= 0) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => setTimeout(resolve, duration));
 }
