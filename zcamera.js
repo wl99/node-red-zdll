@@ -100,7 +100,7 @@ module.exports = function (RED) {
                     ? msgTimeout
                     : Number.isFinite(configTimeout) && configTimeout > 0
                         ? configTimeout
-                        : 60000;
+                        : 20000;
 
                 let resolvedCkDllPath = "";
                 if (candidateCkDllPath) {
@@ -122,7 +122,20 @@ module.exports = function (RED) {
                 } catch (iniError) {
                     node.status({ fill: "red", shape: "ring", text: iniError.message });
                     node.error(iniError, msg);
-                    done(iniError);
+                    msg.payload = {
+                        success: false,
+                        results: [],
+                        error: {
+                            message: iniError.message,
+                            code: iniError.code || "INI_ERROR",
+                            detail: {
+                                stdout: iniError.stdout || "",
+                                stderr: iniError.stderr || ""
+                            }
+                        }
+                    };
+                    send(msg);
+                    done();
                     return;
                 }
 
@@ -152,7 +165,14 @@ module.exports = function (RED) {
                     outputMode,
                     barCodeMap
                 });
-                msg.payload = resultCount <= 1 ? payload.single : payload.multiple;
+                msg.payload = {
+                    success: true,
+                    results: resultCount <= 1
+                        ? payload.single
+                            ? [payload.single]
+                            : []
+                        : payload.multiple
+                };
 
                 const statusText = resultCount === 1
                     ? path.basename(payload.single?.photoPath || processedResults[0]?.output || "")
@@ -163,7 +183,20 @@ module.exports = function (RED) {
             } catch (err) {
                 node.status({ fill: "red", shape: "ring", text: err.message });
                 node.error(err, msg);
-                done(err);
+                msg.payload = {
+                    success: false,
+                    results: [],
+                    error: {
+                        message: err.message,
+                        code: err.code || "CAPTURE_ERROR",
+                        detail: {
+                            stdout: err.stdout || "",
+                            stderr: err.stderr || ""
+                        }
+                    }
+                };
+                send(msg);
+                done();
             }
         });
     }
